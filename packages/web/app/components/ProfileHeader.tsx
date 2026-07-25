@@ -7,6 +7,7 @@ export interface ProfileHeaderProps {
   address: string;
   username: string;
   creatorToken: string;
+  bannerUrl?: string;
   followerCount: number;
   followingCount: number;
   isOwnProfile: boolean;
@@ -73,6 +74,7 @@ export function ProfileHeader({
   address,
   username,
   creatorToken,
+  bannerUrl,
   followerCount,
   followingCount,
   isOwnProfile,
@@ -82,6 +84,7 @@ export function ProfileHeader({
 }: ProfileHeaderProps) {
   return (
     <section style={styles.header}>
+      {bannerUrl ? <img src={bannerUrl} alt="Profile banner" style={styles.bannerImage} /> : null}
       <div style={styles.avatarLg} aria-hidden="true" />
 
       <div style={styles.meta}>
@@ -131,6 +134,7 @@ export function ProfileHeader({
 const styles: Record<string, React.CSSProperties> = {
   header: {
     display: "flex",
+    flexDirection: "column",
     gap: "var(--spacing-lg)",
     alignItems: "flex-start",
     background: "var(--color-bg)",
@@ -139,6 +143,12 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "var(--spacing-lg)",
     marginBottom: "var(--spacing-lg)",
     flexWrap: "wrap",
+  },
+  bannerImage: {
+    width: "100%",
+    height: "180px",
+    objectFit: "cover",
+    borderRadius: "12px",
   },
   avatarLg: {
     width: "72px",

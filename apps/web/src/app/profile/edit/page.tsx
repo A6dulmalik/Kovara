@@ -9,6 +9,7 @@ import { useWallet } from '@/hooks/useWallet';
 export interface ProfileData {
   username: string;
   creatorToken: string;
+  bannerUrl: string;
 }
 
 // ── Contract stubs ───────────────────────────────────────────────────────────
@@ -51,6 +52,7 @@ export default function ProfileEditPage() {
         setInitialValues({
           username: profile?.username ?? '',
           creatorToken: profile?.creatorToken ?? '',
+          bannerUrl: profile?.bannerUrl ?? '',
         });
       })
       .catch((err: unknown) => {

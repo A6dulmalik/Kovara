@@ -4,6 +4,7 @@ export interface ProfileData {
   address: string;
   username: string | null;
   bio: string | null;
+  bannerUrl: string | null;
 }
 
 export async function fetchProfile(
@@ -22,5 +23,12 @@ export async function fetchProfile(
     address,
     username: raw.username ?? null,
     bio: (raw.bio as string) ?? null,
+    bannerUrl:
+      (raw.bannerUrl as string | undefined) ??
+      (raw.banner_url as string | undefined) ??
+      (raw.banner as string | undefined) ??
+      (raw.coverUrl as string | undefined) ??
+      (raw.cover_image as string | undefined) ??
+      null,
   };
 }

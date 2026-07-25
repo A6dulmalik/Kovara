@@ -9,11 +9,15 @@ export async function submitProfileTransaction(
   user: string,
   username: string,
   creatorToken: string,
+  bannerUrl: string,
   rpcUrl: string,
   contractId: string
 ): Promise<string> {
   const client = new KovaraClient({ contractId, rpcUrl });
   const xdrEnv = client.setProfile(user, username, creatorToken);
+  if (bannerUrl.trim()) {
+    console.info("Profile banner URL captured", bannerUrl);
+  }
 
   const kit = (
     globalThis as unknown as {

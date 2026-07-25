@@ -35,6 +35,7 @@ export default function EditProfileScreen() {
 
   const [username, setUsername] = useState("");
   const [creatorToken, setCreatorToken] = useState("");
+  const [bannerUrl, setBannerUrl] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [usernameError, setUsernameError] = useState<string | null>(null);
 
@@ -65,6 +66,7 @@ export default function EditProfileScreen() {
         address,
         username.trim(),
         creatorToken.trim(),
+        bannerUrl.trim(),
         rpcUrl,
         contractId
       );
@@ -113,6 +115,24 @@ export default function EditProfileScreen() {
             </Text>
           ) : null}
           <Text style={styles.hint}>3–32 characters: letters, numbers, or underscores.</Text>
+        </View>
+
+        <View style={styles.fieldGroup}>
+          <Text style={styles.label}>Banner URL</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="https://example.com/banner.jpg"
+            placeholderTextColor="#64748b"
+            value={bannerUrl}
+            onChangeText={setBannerUrl}
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={!submitting}
+            accessibilityLabel="Profile banner URL"
+            accessibilityHint="Enter a URL for your profile cover image"
+            accessibilityState={{ disabled: submitting }}
+          />
+          <Text style={styles.hint}>Optional cover image URL shown at the top of your profile.</Text>
         </View>
 
         <View style={styles.fieldGroup}>
