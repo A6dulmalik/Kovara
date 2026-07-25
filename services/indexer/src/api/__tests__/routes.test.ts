@@ -22,7 +22,6 @@ function makeMockDb(): jest.Mocked<Database> {
     getPool: jest.fn(),
     addPoolAdmin: jest.fn(),
     removePoolAdmin: jest.fn(),
-    searchPosts: jest.fn(),
     getProfile: jest.fn(),
     listPosts: jest.fn(),
     getFollowers: jest.fn(),
@@ -240,7 +239,6 @@ describe("API Routes", () => {
       db.getPost.mockResolvedValueOnce({
         id: BigInt(42),
         author: "GABC123",
-        content: "Test post content",
         content: "Hello, world!",
         deleted: false,
         tip_total: BigInt(100),
@@ -578,6 +576,131 @@ describe("API Routes", () => {
       expect(body.posts[0].like_count).toBe("3");
       expect(typeof body.posts[0].tip_total).toBe("string");
       expect(typeof body.posts[0].like_count).toBe("string");
+    });
+  });
+
+  // ── Empty-result pagination (BE-30) ──────────────────────────────────────
+
+  describe("Empty-result pagination", () => {
+    const VALID_ADDRESS = "GAZJ2EQV2ES6R5BLUNXMNFR5VN3HQF4KXJ2GM5Q7GQHT5XBC2CRX3GK3";
+
+    it("GET /api/posts returns consistent shape when no posts exist", async () => {
+      db.listPosts.mockResolvedValueOnce({ posts: [], total: 0 });
+
+      const res = await request(app).get("/api/posts");
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        posts: [],
+        total: 0,
+        limit: 20,
+        offset: 0,
+        has_more: false,
+      });
+    });
+
+    it("GET /api/posts returns empty array with has_more=false when offset exceeds total", async () => {
+      db.listPosts.mockResolvedValueOnce({ posts: [], total: 5 });
+
+      const res = await request(app).get("/api/posts?offset=100");
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        posts: [],
+        total: 5,
+        has_more: false,
+      });
+    });
+
+    it("GET /api/posts with author filter returns consistent empty shape", async () => {
+      db.listPosts.mockResolvedValueOnce({ posts: [], total: 0 });
+
+      const res = await request(app).get("/api/posts?author=GNONEXISTENT");
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        posts: [],
+        total: 0,
+        has_more: false,
+      });
+    });
+
+    it("GET /api/follows/:address/followers returns consistent shape when no followers", async () => {
+      db.getFollowers.mockResolvedValueOnce({ followers: [], total: 0 });
+
+      const res = await request(app).get("/api/follows/GALONE/followers");
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        address: "GALONE",
+        followers: [],
+        total: 0,
+        has_more: false,
+      });
+    });
+
+    it("GET /api/follows/:address/followers returns empty with has_more=false when offset beyond total", async () => {
+      db.getFollowers.mockResolvedValueOnce({ followers: [], total: 3 });
+
+      const res = await request(app).get("/api/follows/GABC123/followers?offset=100");
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        followers: [],
+        total: 3,
+        has_more: false,
+      });
+    });
+
+    it("GET /api/follows/:address/following returns consistent shape when not following anyone", async () => {
+      db.getFollowing.mockResolvedValueOnce({ following: [], total: 0 });
+
+      const res = await request(app).get("/api/follows/GALONE/following");
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        address: "GALONE",
+        following: [],
+        total: 0,
+        has_more: false,
+      });
+    });
+
+    it("GET /api/follows/:address/following returns empty with has_more=false when offset beyond total", async () => {
+      db.getFollowing.mockResolvedValueOnce({ following: [], total: 2 });
+
+      const res = await request(app).get("/api/follows/GABC123/following?offset=50");
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        following: [],
+        total: 2,
+        has_more: false,
+      });
+    });
+
+    it("POST /api/search/posts returns consistent shape when no results match", async () => {
+      db.searchPosts.mockResolvedValueOnce({ posts: [], total: 0 });
+
+      const res = await request(app)
+        .post("/api/search/posts")
+        .send({ query: "nonexistent_term_xyz" });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        posts: [],
+        total: 0,
+        has_more: false,
+        next_offset: null,
+        prev_offset: null,
+      });
+    });
+
+    it("POST /api/search/posts returns has_more=false when offset exceeds total", async () => {
+      db.searchPosts.mockResolvedValueOnce({ posts: [], total: 5 });
+
+      const res = await request(app)
+        .post("/api/search/posts")
+        .send({ query: "test", offset: 100 });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        posts: [],
+        total: 5,
+        has_more: false,
+        next_offset: null,
+      });
     });
   });
 

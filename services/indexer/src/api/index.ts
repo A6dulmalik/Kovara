@@ -168,9 +168,6 @@ export function createApp(db: Database, options: AppOptions = {}): express.Appli
       uptime: process.uptime(),
       db: dbStatus,
     });
-  // ── Health check (unlimited, no auth required) ──────────────────────────────
-  app.get("/health", (_req: Request, res: Response): void => {
-    res.json({ status: "ok", uptime: process.uptime() });
   });
 
   // Apply rate limiting to all /api routes.
