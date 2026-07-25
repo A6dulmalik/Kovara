@@ -19,6 +19,9 @@ export type WalletState =
   | "connected_no_profile"
   | "ready";
 
+export type { WalletProviderKind, WalletProviderOption } from "@/lib/walletProviders";
+export { getSupportedWalletProviders, walletProviderOptions } from "@/lib/walletProviders";
+
 export interface WalletInfo {
   address: string | null;
   network: string | null;
@@ -52,11 +55,16 @@ export function useOnboardingWallet() {
   const [balance, setBalance] = useState<string | null>(null);
 
   const detectState = useCallback(async () => {
-    const hasFreighter =
+    const freighterAvailable =
       typeof window !== "undefined" &&
       !!(window as unknown as { freighter?: unknown }).freighter;
 
-    if (!hasFreighter) {
+    const providers = getSupportedWalletProviders({
+      freighter: freighterAvailable,
+      walletconnect: true,
+    });
+
+    if (!providers.length) {
       setState("not_installed");
       return;
     }
