@@ -9,7 +9,8 @@ function truncateAddress(address: string): string {
 }
 
 export function NavBar() {
-  const { address, connected, network, connect, disconnect } = useWallet();
+  const { address, connected, network, connect, disconnect, provider, availableProviders, setProvider } =
+    useWallet();
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-[var(--border)] bg-[var(--background)]/80 backdrop-blur-sm">
@@ -84,14 +85,31 @@ export function NavBar() {
               </button>
             </>
           ) : (
-            <button
-              type="button"
-              onClick={connect}
-              className="rounded-lg bg-violet-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-violet-500 transition-colors"
-              aria-label="Connect Freighter wallet"
-            >
-              Connect Wallet
-            </button>
+            <div className="flex items-center gap-2">
+              <label className="sr-only" htmlFor="wallet-provider-select">
+                Choose wallet provider
+              </label>
+              <select
+                id="wallet-provider-select"
+                value={provider ?? availableProviders[0] ?? "freighter"}
+                onChange={(event) => setProvider(event.target.value as "freighter" | "walletconnect")}
+                className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-1.5 text-sm"
+              >
+                {availableProviders.map((option) => (
+                  <option key={option} value={option}>
+                    {option === "freighter" ? "Freighter" : "WalletConnect"}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => void connect(provider ?? undefined)}
+                className="rounded-lg bg-violet-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-violet-500 transition-colors"
+                aria-label="Connect wallet"
+              >
+                Connect Wallet
+              </button>
+            </div>
           )}
         </div>
       </nav>

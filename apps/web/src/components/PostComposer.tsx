@@ -20,7 +20,7 @@ import { createPostOnChain } from "@/lib/createPost";
  * expose the Publish action to a disconnected user.
  */
 export function PostComposer() {
-  const { address, connected, connect } = useWallet();
+  const { address, connected, connect, provider, availableProviders, setProvider } = useWallet();
   const [content, setContent] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -41,17 +41,30 @@ export function PostComposer() {
         <div>
           <h2 className="text-lg font-semibold">Connect your wallet to publish</h2>
           <p className="mt-1 text-sm text-[var(--text-muted)]">
-            Posts are signed on-chain with Freighter — your keys never leave the extension.
+            Choose a supported provider below to publish your post.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={connect}
-          aria-label="Connect Freighter wallet"
-          className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-400"
-        >
-          Connect Wallet
-        </button>
+        <div className="flex flex-col items-center gap-2">
+          <select
+            value={provider ?? availableProviders[0] ?? "freighter"}
+            onChange={(event) => setProvider(event.target.value as "freighter" | "walletconnect")}
+            className="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+          >
+            {availableProviders.map((option) => (
+              <option key={option} value={option}>
+                {option === "freighter" ? "Freighter" : "WalletConnect"}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => void connect(provider ?? undefined)}
+            aria-label="Connect wallet"
+            className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-400"
+          >
+            Connect Wallet
+          </button>
+        </div>
       </div>
     );
   }
