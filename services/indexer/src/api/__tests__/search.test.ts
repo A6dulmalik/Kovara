@@ -19,12 +19,17 @@ describe("POST /api/search/posts", () => {
     adjustPoolBalance: jest.fn(),
     insertPool: jest.fn(),
     getPool: jest.fn(),
+    listPools: jest.fn().mockResolvedValue({ pools: [], total: 0 }),
     addPoolAdmin: jest.fn(),
     removePoolAdmin: jest.fn(),
     getProfile: jest.fn(),
+    listProfiles: jest.fn().mockResolvedValue({ profiles: [], total: 0 }),
     listPosts: jest.fn(),
     getFollowers: jest.fn(),
     getFollowing: jest.fn(),
+    getFollowersAfter: jest.fn().mockResolvedValue({ followers: [], total: 0 }),
+    getFollowingAfter: jest.fn().mockResolvedValue({ following: [], total: 0 }),
+    getFollow: jest.fn(),
     searchPosts: jest.fn().mockResolvedValue({
       posts: [
         {
