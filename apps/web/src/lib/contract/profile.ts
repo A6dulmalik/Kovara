@@ -2,12 +2,14 @@ export interface SetProfileParams {
   address: string;
   username: string;
   creatorToken: string;
+  bannerUrl?: string;
 }
 
 export async function setProfile({
   address,
   username,
   creatorToken,
+  bannerUrl,
 }: SetProfileParams) {
   /**
    * TODO:
@@ -29,5 +31,6 @@ export async function setProfile({
     address,
     username,
     creatorToken,
+    bannerUrl: bannerUrl?.trim() || undefined,
   };
 }

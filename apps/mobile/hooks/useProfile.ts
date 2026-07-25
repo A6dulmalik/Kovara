@@ -13,6 +13,7 @@ export interface Profile {
   address: string;
   username?: string | null;
   bio?: string | null;
+  bannerUrl?: string | null;
 }
 
 export function useProfile(address: string) {
@@ -54,6 +55,13 @@ export function useProfile(address: string) {
               address,
               username: p.username ?? null,
               bio: (p.bio as string) ?? null,
+              bannerUrl:
+                (p.bannerUrl as string | undefined) ??
+                (p.banner_url as string | undefined) ??
+                (p.banner as string | undefined) ??
+                (p.coverUrl as string | undefined) ??
+                (p.cover_image as string | undefined) ??
+                null,
             }
           : null
       );

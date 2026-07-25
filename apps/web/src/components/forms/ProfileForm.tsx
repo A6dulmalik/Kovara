@@ -7,6 +7,7 @@ import { FieldError } from './FieldError';
 export interface ProfileFormValues {
   username: string;
   creatorToken: string;
+  bannerUrl: string;
 }
 
 interface ProfileFormProps {
@@ -19,11 +20,13 @@ interface ProfileFormProps {
 interface FormErrors {
   username?: string;
   creatorToken?: string;
+  bannerUrl?: string;
 }
 
 export function ProfileForm({ onSubmit, initialValues = {}, disabled = false }: ProfileFormProps) {
   const [username, setUsername] = useState(initialValues.username ?? '');
   const [creatorToken, setCreatorToken] = useState(initialValues.creatorToken ?? '');
+  const [bannerUrl, setBannerUrl] = useState(initialValues.bannerUrl ?? '');
   const [errors, setErrors] = useState<FormErrors>({});
   const [submitting, setSubmitting] = useState(false);
 
@@ -35,6 +38,16 @@ export function ProfileForm({ onSubmit, initialValues = {}, disabled = false }: 
     if (creatorToken.trim()) {
       const addrResult = validateStellarAddress(creatorToken);
       if (!addrResult.valid) errs.creatorToken = addrResult.error;
+    }
+    if (bannerUrl.trim()) {
+      try {
+        const url = new URL(bannerUrl);
+        if (!['http:', 'https:'].includes(url.protocol)) {
+          errs.bannerUrl = 'Banner URL must use http or https.';
+        }
+      } catch {
+        errs.bannerUrl = 'Enter a valid banner URL.';
+      }
     }
     return errs;
   }
@@ -48,7 +61,7 @@ export function ProfileForm({ onSubmit, initialValues = {}, disabled = false }: 
     }
     setSubmitting(true);
     try {
-      await onSubmit({ username: username.trim(), creatorToken: creatorToken.trim() });
+      await onSubmit({ username: username.trim(), creatorToken: creatorToken.trim(), bannerUrl: bannerUrl.trim() });
     } finally {
       setSubmitting(false);
     }
@@ -83,6 +96,36 @@ export function ProfileForm({ onSubmit, initialValues = {}, disabled = false }: 
       </div>
 
       {/* Creator token (Stellar address) */}
+      <div>
+        <label htmlFor="profile-banner-url" className="block text-sm font-medium mb-1">
+          Banner URL{' '}
+          <span className="text-xs text-gray-500 font-normal">(optional)</span>
+        </label>
+        <input
+          id="profile-banner-url"
+          name="bannerUrl"
+          type="url"
+          value={bannerUrl}
+          onChange={(e) => {
+            setBannerUrl(e.target.value);
+            if (errors.bannerUrl) setErrors((prev) => ({ ...prev, bannerUrl: undefined }));
+          }}
+          disabled={disabled || submitting}
+          aria-describedby={errors.bannerUrl ? 'profile-banner-url-error' : 'profile-banner-url-hint'}
+          aria-invalid={!!errors.bannerUrl}
+          placeholder="https://example.com/cover.jpg"
+          className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 disabled:opacity-50 ${
+            errors.bannerUrl ? 'border-red-500' : 'border-gray-300'
+          }`}
+        />
+        {!errors.bannerUrl && (
+          <p id="profile-banner-url-hint" className="mt-1 text-xs text-gray-500">
+            Optional cover image shown at the top of your profile.
+          </p>
+        )}
+        <FieldError id="profile-banner-url-error" message={errors.bannerUrl} />
+      </div>
+
       <div>
         <label htmlFor="profile-creator-token" className="block text-sm font-medium mb-1">
           Creator Token Address{' '}
