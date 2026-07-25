@@ -247,18 +247,20 @@ export function createApp(db: Database, options: AppOptions = {}): express.Appli
     "/api/search/posts",
     async (req: Request, res: Response<SearchResponse | ErrorResponse>): Promise<void> => {
       const body = req.body as Partial<SearchQuery>;
+      const rawQuery = body.query;
 
-      if (
-        body.query === undefined ||
-        body.query === null ||
-        typeof body.query !== "string" ||
-        body.query.trim() === ""
-      ) {
+      if (rawQuery === undefined || rawQuery === null || typeof rawQuery !== "string") {
         res.status(400).json({ error: "query is required", code: "INVALID_QUERY" });
         return;
       }
 
-      if (body.query.length > MAX_QUERY_LENGTH) {
+      const query = rawQuery.trim().replace(/\s+/g, " ");
+      if (query === "") {
+        res.status(400).json({ error: "query is required", code: "INVALID_QUERY" });
+        return;
+      }
+
+      if (query.length > MAX_QUERY_LENGTH) {
         res.status(400).json({
           error: `query cannot exceed ${MAX_QUERY_LENGTH} characters`,
           code: "QUERY_TOO_LONG",
@@ -305,7 +307,7 @@ export function createApp(db: Database, options: AppOptions = {}): express.Appli
       }
 
       const { posts, total } = await db.searchPosts({
-        query: body.query.trim(),
+        query,
         limit,
         offset,
       });

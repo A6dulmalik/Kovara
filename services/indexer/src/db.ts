@@ -468,7 +468,11 @@ export class PostgresDatabase implements Database {
     offset: number;
   }): Promise<{ posts: Post[]; total: number }> {
     const { query, limit, offset } = filters;
-    const normalizedQuery = query.trim();
+    const normalizedQuery = query.trim().replace(/\s+/g, " ");
+
+    if (normalizedQuery === "") {
+      return { posts: [], total: 0 };
+    }
 
     const countResult = await this.pool.query(
       `

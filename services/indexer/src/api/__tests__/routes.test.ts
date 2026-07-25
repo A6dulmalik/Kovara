@@ -26,9 +26,8 @@ function makeMockDb(): jest.Mocked<Database> {
     listPosts: jest.fn(),
     getFollowers: jest.fn(),
     getFollowing: jest.fn(),
-    searchPosts: jest.fn(),
-    getTokenMetadata: jest.fn(),
     searchPosts: jest.fn().mockResolvedValue({ posts: [], total: 0 }),
+    getTokenMetadata: jest.fn(),
   } as jest.Mocked<Database>;
 }
 
@@ -242,7 +241,6 @@ describe("API Routes", () => {
       db.getPost.mockResolvedValueOnce({
         id: BigInt(42),
         author: "GABC123",
-        content: "Hello world",
         content: "Test post content",
         deleted: false,
         tip_total: BigInt(100),
@@ -427,6 +425,27 @@ describe("API Routes", () => {
       const res = await request(app).post("/api/search/posts").send({ query: "   " });
       expect(res.status).toBe(400);
       expect(res.body).toMatchObject({ code: "INVALID_QUERY" });
+    });
+
+    it("accepts a query with leading/trailing whitespace and normalizes it before database access", async () => {
+      db.searchPosts.mockResolvedValueOnce({ posts: [], total: 0 });
+
+      const res = await request(app)
+        .post("/api/search/posts")
+        .send({ query: "   test   search  " });
+
+      expect(res.status).toBe(200);
+      expect(db.searchPosts).toHaveBeenCalledWith({ query: "test search", limit: 20, offset: 0 });
+    });
+
+    it("accepts input with trailing whitespace when trimmed length is within max length", async () => {
+      const longQuery = "a".repeat(499) + "   ";
+      db.searchPosts.mockResolvedValueOnce({ posts: [], total: 0 });
+
+      const res = await request(app).post("/api/search/posts").send({ query: longQuery });
+
+      expect(res.status).toBe(200);
+      expect(db.searchPosts).toHaveBeenCalledWith({ query: "a".repeat(499), limit: 20, offset: 0 });
     });
 
     it("returns 400 when query exceeds max length", async () => {
