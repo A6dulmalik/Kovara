@@ -24,6 +24,7 @@
 import { createApp } from "./api";
 import { runMigrations } from "./migrate";
 import { PostgresDatabase } from "./db";
+import pkg from "../package.json";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -168,6 +169,7 @@ async function persistEvent(event: RawEvent): Promise<void> {
 
 async function main(): Promise<void> {
   console.log("[indexer] Starting Kovara indexer (STUB MODE)");
+  console.log(`[indexer] Version: ${pkg.version} | Node: ${process.version}`);
   console.log(`[indexer] API server listening on ${HOST}:${PORT}`);
   console.log("[indexer] Database and event streaming disabled for stub mode");
 
