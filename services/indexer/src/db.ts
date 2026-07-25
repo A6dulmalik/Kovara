@@ -172,6 +172,12 @@ export interface Database {
 export class PostgresDatabase implements Database {
   // In-memory caches for frequently-queryable records (BE-18).
   // Short TTL balances read performance with eventual consistency.
+  //
+  // Cache invalidation strategy (BE-33): Every write method that mutates a
+  // cached entity deletes the corresponding cache entry *before* issuing the
+  // SQL statement. This ensures that any subsequent read will fetch the latest
+  // committed state from Postgres rather than returning a stale cached value.
+  // The TTL acts as a safety net for entries that were not explicitly invalidated.
   private readonly profileCache = new TTLCache<Profile>(30_000); // 30 seconds
   private readonly postCache = new TTLCache<Post>(30_000);
 
@@ -279,7 +285,7 @@ export class PostgresDatabase implements Database {
     );
   }
 
-  async markPostDeleted(post_id: bigint, deleted_ledger: number): Promise<void> {
+  async markPostDeleted(post_id: bigint, deleted_ledger: number, deleted_at?: Date): Promise<void> {
     this.postCache.delete(post_id.toString());
     await this.pool.query(
       `
@@ -287,7 +293,7 @@ export class PostgresDatabase implements Database {
       SET deleted_at = COALESCE($3, NOW()), deleted_ledger = $2
       WHERE id = $1 AND deleted_at IS NULL
       `,
-      [post_id.toString(), deleted_ledger, ts]
+      [post_id.toString(), deleted_ledger, deleted_at ?? null]
     );
   }
 
