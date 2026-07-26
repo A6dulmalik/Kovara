@@ -137,6 +137,32 @@ The `version` field is read from `package.json`. The `git_commit` and
 
 - `GET /api/pools/:id` — Get pool state by ID
 
+### Debug Snapshot (BE-29)
+
+- `GET /api/debug/snapshot` — Export a JSON snapshot of posts, profiles, and pools for issue triage
+
+Requires the `x-debug-token` header matching the `DEBUG_TOKEN` environment variable. If `DEBUG_TOKEN` is not set, the endpoint returns `503 Debug endpoint disabled`.
+
+```bash
+curl -H "x-debug-token: $DEBUG_TOKEN" http://localhost:3000/api/debug/snapshot
+```
+
+Response:
+
+```json
+{
+  "posts": [...],
+  "profiles": [...],
+  "pools": [...],
+  "generated_at": "2026-07-25T12:00:00.000Z",
+  "post_count": 42,
+  "profile_count": 10,
+  "pool_count": 3
+}
+```
+
+Each collection is capped at 1000 records. The `post_count`, `profile_count`, and `pool_count` fields reflect total counts in the database.
+
 ## Running Tests
 
 ```bash

@@ -4,6 +4,7 @@ import cors from "cors";
 import rateLimit, { RateLimitRequestHandler } from "express-rate-limit";
 import crypto from "crypto";
 import { Database } from "../db";
+import { ApiErrorResponse, DebugSnapshot } from "./contracts";
 import { ApiErrorResponse } from "./contracts";
 import pkg from "../../package.json";
 
@@ -331,6 +332,44 @@ export function createApp(db: Database, options: AppOptions = {}): express.Appli
         next_offset: has_more ? offset + posts.length : null,
         prev_offset: offset > 0 ? offset - limit : null,
       });
+    }
+  );
+
+  // ── Debug snapshot endpoint (BE-29) ────────────────────────────────────────
+  const DEBUG_SNAPSHOT_LIMIT = 1000;
+
+  app.get(
+    "/api/debug/snapshot",
+    async (req: Request, res: Response<DebugSnapshot | ApiErrorResponse>): Promise<void> => {
+      const debugToken = process.env.DEBUG_TOKEN;
+      if (!debugToken) {
+        res.status(503).json({ error: "Debug endpoint disabled", code: "DEBUG_DISABLED" });
+        return;
+      }
+
+      const providedToken = req.headers["x-debug-token"];
+      if (providedToken !== debugToken) {
+        res.status(401).json({ error: "Invalid debug token", code: "UNAUTHORIZED" });
+        return;
+      }
+
+      const [postsResult, profilesResult, poolsResult] = await Promise.all([
+        db.listPosts({ limit: DEBUG_SNAPSHOT_LIMIT, offset: 0 }),
+        db.listProfiles({ limit: DEBUG_SNAPSHOT_LIMIT, offset: 0 }),
+        db.listPools({ limit: DEBUG_SNAPSHOT_LIMIT, offset: 0 }),
+      ]);
+
+      res.json(
+        serializeBigInt({
+          posts: postsResult.posts,
+          profiles: profilesResult.profiles,
+          pools: poolsResult.pools,
+          generated_at: new Date().toISOString(),
+          post_count: postsResult.total,
+          profile_count: profilesResult.total,
+          pool_count: poolsResult.total,
+        })
+      );
     }
   );
 
