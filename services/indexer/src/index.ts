@@ -15,6 +15,7 @@
 
 import { Pool } from "pg";
 import { streamEvents, RawEvent } from "./stream";
+import { logger } from "./logger";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -82,7 +83,7 @@ async function handleEvent(event: RawEvent): Promise<void> {
   await persistEvent(event);
 
   const eventType = event.topic[0];
-  console.log(`[indexer] ledger=${event.ledger} type=${eventType} tx=${event.txHash}`);
+  logger.always(`ledger=${event.ledger} type=${eventType} tx=${event.txHash}`);
 }
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
@@ -90,7 +91,7 @@ async function handleEvent(event: RawEvent): Promise<void> {
 const abortController = new AbortController();
 
 function shutdown(signal: string): void {
-  console.log(`[indexer] Received ${signal}, shutting down…`);
+  logger.always(`Received ${signal}, shutting down…`);
   abortController.abort();
 }
 
@@ -100,10 +101,10 @@ process.on("SIGINT", () => shutdown("SIGINT"));
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  console.log("[indexer] Starting Kovara indexer");
-  console.log(`[indexer] RPC:      ${STELLAR_RPC_URL}`);
-  console.log(`[indexer] Contract: ${CONTRACT_ID}`);
-  console.log(`[indexer] From ledger: ${START_LEDGER}`);
+  logger.always(`Starting Kovara indexer`);
+  logger.always(`RPC:      ${STELLAR_RPC_URL}`);
+  logger.always(`Contract: ${CONTRACT_ID}`);
+  logger.always(`From ledger: ${START_LEDGER}`);
 
   await ensureEventsTable();
 
@@ -119,10 +120,10 @@ async function main(): Promise<void> {
   );
 
   await pgPool.end();
-  console.log("[indexer] Shutdown complete.");
+  logger.always("Shutdown complete.");
 }
 
 main().catch((err) => {
-  console.error("[indexer] Fatal error:", err);
+  logger.error("Fatal error:", err);
   process.exit(1);
 });

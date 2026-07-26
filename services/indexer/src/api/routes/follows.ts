@@ -1,80 +1,49 @@
 import { Router, Request, Response } from "express";
 import { Database } from "../../db";
-
-const MAX_LIMIT = 100;
-const DEFAULT_LIMIT = 20;
-const DEFAULT_OFFSET = 0;
-
-function parsePagination(
-  query: Record<string, unknown>
-): { limit: number; offset: number } | { error: string; code: string } {
-  const rawLimit = query.limit !== undefined ? Number(query.limit) : DEFAULT_LIMIT;
-  const rawOffset = query.offset !== undefined ? Number(query.offset) : DEFAULT_OFFSET;
-
-  if (!Number.isInteger(rawLimit) || rawLimit < 1) {
-    return { error: "limit must be a positive integer", code: "INVALID_QUERY" };
-  }
-  if (rawLimit > MAX_LIMIT) {
-    return { error: `limit cannot exceed ${MAX_LIMIT}`, code: "LIMIT_EXCEEDED" };
-  }
-  if (!Number.isInteger(rawOffset) || rawOffset < 0) {
-    return { error: "offset must be a non-negative integer", code: "INVALID_QUERY" };
-  }
-
-  return { limit: rawLimit, offset: rawOffset };
-}
+import { sendSuccess, sendError, sendPaginated } from "../response";
 
 export function createFollowsRouter(db: Database): Router {
   const router = Router();
 
-  /**
-   * GET /follows/:address/followers
-   * Returns accounts that follow the given address.
-   */
+  function parsePagination(
+    query: Record<string, unknown>
+  ): { limit: number; offset: number } | null {
+    const rawLimit = query.limit !== undefined ? Number(query.limit) : 20;
+    const rawOffset = query.offset !== undefined ? Number(query.offset) : 0;
+
+    if (!Number.isInteger(rawLimit) || rawLimit < 1) return null;
+    if (rawLimit > 100) return null;
+    if (!Number.isInteger(rawOffset) || rawOffset < 0) return null;
+
+    return { limit: rawLimit, offset: rawOffset };
+  }
+
   router.get("/:address/followers", async (req: Request, res: Response): Promise<void> => {
     const { address } = req.params;
     const pagination = parsePagination(req.query as Record<string, unknown>);
 
-    if ("error" in pagination) {
-      res.status(400).json(pagination);
+    if (!pagination) {
+      sendError(res, 400, "Invalid pagination parameters", "INVALID_QUERY");
       return;
     }
 
     const { limit, offset } = pagination;
     const { followers, total } = await db.getFollowers(address, limit, offset);
-    res.json({
-      address,
-      followers,
-      total,
-      limit,
-      offset,
-      has_more: offset + followers.length < total,
-    });
+    sendPaginated(res, followers, total, limit, offset);
   });
 
-  /**
-   * GET /follows/:address/following
-   * Returns accounts that the given address follows.
-   */
   router.get("/:address/following", async (req: Request, res: Response): Promise<void> => {
     const { address } = req.params;
     const pagination = parsePagination(req.query as Record<string, unknown>);
 
-    if ("error" in pagination) {
-      res.status(400).json(pagination);
+    if (!pagination) {
+      sendError(res, 400, "Invalid pagination parameters", "INVALID_QUERY");
       return;
     }
 
     const { limit, offset } = pagination;
     const { following, total } = await db.getFollowing(address, limit, offset);
-    res.json({
-      address,
-      following,
-      total,
-      limit,
-      offset,
-      has_more: offset + following.length < total,
-    });
+    sendPaginated(res, following, total, limit, offset);
   });
 
   return router;

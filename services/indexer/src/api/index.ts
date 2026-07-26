@@ -5,23 +5,17 @@ import { createProfilesRouter } from "./routes/profiles";
 import { createPostsRouter } from "./routes/posts";
 import { createFollowsRouter } from "./routes/follows";
 import { createPoolsRouter } from "./routes/pools";
-
-// ── Rate-limit configuration (all values are env-overridable) ────────────────
+import { sendError, sendRateLimitError, sendSuccess } from "./response";
 
 const RATE_LIMIT_WINDOW_MS = parseInt(process.env.RATE_LIMIT_WINDOW_MS ?? "60000", 10);
 const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX ?? "100", 10);
 
-// ── Rate limiter middleware ───────────────────────────────────────────────────
-
 const apiLimiter = rateLimit({
   windowMs: RATE_LIMIT_WINDOW_MS,
   max: RATE_LIMIT_MAX,
-  standardHeaders: "draft-7", // Sends RateLimit-* headers (RFC 9110 draft-7)
+  standardHeaders: "draft-7",
   legacyHeaders: false,
   keyGenerator: (req: Request): string => {
-    // Respect X-Forwarded-For when running behind a trusted reverse proxy.
-    // In production, set `app.set("trust proxy", 1)` and ensure only your
-    // load-balancer can set this header.
     const forwarded = req.headers["x-forwarded-for"];
     if (typeof forwarded === "string") {
       return forwarded.split(",")[0].trim();
@@ -30,30 +24,20 @@ const apiLimiter = rateLimit({
   },
   handler: (req: Request, res: Response): void => {
     const retryAfter = Math.ceil(RATE_LIMIT_WINDOW_MS / 1000);
-    res.status(429).set("Retry-After", String(retryAfter)).json({
-      error: "Too many requests. Please retry after the indicated delay.",
-      code: "RATE_LIMIT_EXCEEDED",
-      retryAfterSeconds: retryAfter,
-    });
+    sendRateLimitError(res, retryAfter);
   },
 });
-
-// ── App factory ───────────────────────────────────────────────────────────────
 
 export function createApp(db: Database): express.Application {
   const app = express();
   app.use(express.json());
 
-  // Apply rate limiting to all /api routes.
   app.use("/api", apiLimiter);
 
-  // ── Resource routes ────────────────────────────────────────────────────────
   app.use("/api/profiles", createProfilesRouter(db));
   app.use("/api/posts", createPostsRouter(db));
   app.use("/api/follows", createFollowsRouter(db));
   app.use("/api/pools", createPoolsRouter(db));
-
-  // ── Search endpoint ──────────────────────────────────────────────────────────
 
   interface SearchQuery {
     query: string;
@@ -75,18 +59,13 @@ export function createApp(db: Database): express.Application {
     has_more: boolean;
   }
 
-  interface ErrorResponse {
-    error: string;
-    code: string;
-  }
-
   const MAX_LIMIT = 100;
   const DEFAULT_LIMIT = 20;
   const DEFAULT_OFFSET = 0;
 
   app.post(
     "/api/search/posts",
-    (req: Request, res: Response<SearchResponse | ErrorResponse>): void => {
+    (req: Request, res: Response): void => {
       const body = req.body as Partial<SearchQuery>;
 
       if (
@@ -95,7 +74,7 @@ export function createApp(db: Database): express.Application {
         typeof body.query !== "string" ||
         body.query.trim() === ""
       ) {
-        res.status(400).json({ error: "query is required", code: "INVALID_QUERY" });
+        sendError(res, 400, "query is required", "INVALID_QUERY");
         return;
       }
 
@@ -103,48 +82,37 @@ export function createApp(db: Database): express.Application {
       const offset = body.offset !== undefined ? Number(body.offset) : DEFAULT_OFFSET;
 
       if (!Number.isInteger(limit) || limit < 1) {
-        res.status(400).json({ error: "limit must be a positive integer", code: "INVALID_QUERY" });
+        sendError(res, 400, "limit must be a positive integer", "INVALID_QUERY");
         return;
       }
 
       if (limit > MAX_LIMIT) {
-        res.status(400).json({
-          error: `limit cannot exceed ${MAX_LIMIT}`,
-          code: "LIMIT_EXCEEDED",
-        });
+        sendError(res, 400, `limit cannot exceed ${MAX_LIMIT}`, "LIMIT_EXCEEDED");
         return;
       }
 
       if (!Number.isInteger(offset) || offset < 0) {
-        res
-          .status(400)
-          .json({ error: "offset must be a non-negative integer", code: "INVALID_QUERY" });
+        sendError(res, 400, "offset must be a non-negative integer", "INVALID_QUERY");
         return;
       }
 
-      // TODO: integrate with the search database.
-      res.json({ posts: [], total: 0, has_more: false });
+      const result: SearchResponse = { posts: [], total: 0, has_more: false };
+      sendSuccess(res, result);
     }
   );
-
-  // ── Error handler ─────────────────────────────────────────────────────────────
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction): void => {
     console.error(err);
-    res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+    sendError(res, 500, "Internal server error", "INTERNAL_ERROR");
   });
 
   return app;
 }
 
-// Back-compat: export a pre-built app and limiter for tests that import them directly.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const _stub = {} as any;
 export const app = createApp(_stub);
 export { apiLimiter };
-
-// ── Server bootstrap (skipped when imported in tests) ────────────────────────
 
 if (require.main === module) {
   const PORT = parseInt(process.env.PORT ?? "3001", 10);

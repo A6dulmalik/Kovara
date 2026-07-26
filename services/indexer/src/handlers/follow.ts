@@ -1,8 +1,5 @@
-/**
- * Handlers for Follow and Unfollow contract events.
- */
-
 import { Database } from "../db";
+import { logger } from "../logger";
 
 export interface FollowEvent {
   follower: string;
@@ -16,13 +13,6 @@ export interface UnfollowEvent {
   ledger: number;
 }
 
-/**
- * Handle a Follow event.
- *
- * Inserts a directed edge (follower → followee) into the follow graph.
- * Idempotent: the underlying upsert on (follower, followee) is safe to
- * replay.
- */
 export async function handleFollow(db: Database, event: FollowEvent): Promise<void> {
   if (!event.follower) {
     throw new Error("Follow event missing required field: follower");
@@ -38,12 +28,6 @@ export async function handleFollow(db: Database, event: FollowEvent): Promise<vo
   });
 }
 
-/**
- * Handle an Unfollow event.
- *
- * Removes the directed edge (follower → followee) from the follow graph.
- * Idempotent: deleting a non-existent edge is a no-op.
- */
 export async function handleUnfollow(db: Database, event: UnfollowEvent): Promise<void> {
   if (!event.follower) {
     throw new Error("Unfollow event missing required field: follower");
