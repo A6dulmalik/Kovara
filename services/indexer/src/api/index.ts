@@ -5,6 +5,9 @@ import rateLimit, { RateLimitRequestHandler } from "express-rate-limit";
 import crypto from "crypto";
 import { Database } from "../db";
 import { ApiErrorResponse } from "./contracts";
+import pkg from "../../package.json";
+
+const VERSION = pkg.version;
 
 // Enable BigInt JSON serialization (Express res.json uses JSON.stringify).
 (BigInt.prototype as unknown as Record<string, unknown>).toJSON = function () {
@@ -168,9 +171,16 @@ export function createApp(db: Database, options: AppOptions = {}): express.Appli
       uptime: process.uptime(),
       db: dbStatus,
     });
-  // ── Health check (unlimited, no auth required) ──────────────────────────────
-  app.get("/health", (_req: Request, res: Response): void => {
-    res.json({ status: "ok", uptime: process.uptime() });
+  });
+
+  // ── Version metadata (unlimited, no auth required) ──────────────────────────
+  app.get("/version", (_req: Request, res: Response): void => {
+    res.json({
+      version: VERSION,
+      git_commit: process.env.GIT_COMMIT ?? "unknown",
+      build_time: process.env.BUILD_TIME ?? "unknown",
+      node_version: process.version,
+    });
   });
 
   // Apply rate limiting to all /api routes.

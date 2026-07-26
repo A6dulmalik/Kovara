@@ -7,6 +7,7 @@
  */
 
 import { normalizeRawEvent } from "./normalize";
+import { withRetry } from "./retry";
 
 export interface RawEvent {
   type: string;
@@ -158,11 +159,31 @@ export async function streamEvents(
 
   while (!signal.aborted) {
     try {
-      const { events, latestLedger } = await fetchEvents(
-        config.rpcUrl,
-        config.contractId,
-        startLedger,
-        cursor
+      const { events, latestLedger } = await withRetry(
+        () => fetchEvents(config.rpcUrl, config.contractId, startLedger, cursor),
+        {
+          maxAttempts: 3,
+          baseDelayMs: 300,
+          backoffMultiplier: 2,
+          isRetryable: (err: unknown) => {
+            if (err instanceof Error) {
+              const msg = err.message.toLowerCase();
+              return (
+                msg.includes("econnreset") ||
+                msg.includes("econnrefused") ||
+                msg.includes("socket hang up") ||
+                msg.includes("timeout") ||
+                msg.includes("failed to fetch") ||
+                msg.includes("network") ||
+                msg.includes("502") ||
+                msg.includes("503") ||
+                msg.includes("504")
+              );
+            }
+            return true;
+          },
+          operationLabel: "fetchEvents",
+        }
       );
 
       for (const event of events) {
