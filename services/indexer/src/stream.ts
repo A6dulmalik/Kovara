@@ -6,6 +6,9 @@
  * ledger) so the stream can resume after a restart.
  */
 
+import { normalizeRawEvent } from "./normalize";
+import { withRetry } from "./retry";
+
 export interface RawEvent {
   type: string;
   ledger: number;
@@ -156,11 +159,31 @@ export async function streamEvents(
 
   while (!signal.aborted) {
     try {
-      const { events, latestLedger } = await fetchEvents(
-        config.rpcUrl,
-        config.contractId,
-        startLedger,
-        cursor
+      const { events, latestLedger } = await withRetry(
+        () => fetchEvents(config.rpcUrl, config.contractId, startLedger, cursor),
+        {
+          maxAttempts: 3,
+          baseDelayMs: 300,
+          backoffMultiplier: 2,
+          isRetryable: (err: unknown) => {
+            if (err instanceof Error) {
+              const msg = err.message.toLowerCase();
+              return (
+                msg.includes("econnreset") ||
+                msg.includes("econnrefused") ||
+                msg.includes("socket hang up") ||
+                msg.includes("timeout") ||
+                msg.includes("failed to fetch") ||
+                msg.includes("network") ||
+                msg.includes("502") ||
+                msg.includes("503") ||
+                msg.includes("504")
+              );
+            }
+            return true;
+          },
+          operationLabel: "fetchEvents",
+        }
       );
 
       for (const event of events) {
@@ -170,25 +193,27 @@ export async function streamEvents(
           cursor = event.pagingToken;
           continue;
         }
+
+        const normalizedEvent = normalizeRawEvent(event);
+
+        // BE-24: Skip already-processed events before hitting the handler or DB.
+        if (seenEventIds.has(normalizedEvent.id)) {
+          console.log(`[stream] Skipping duplicate event id=${normalizedEvent.id} tx=${normalizedEvent.txHash}`);
+          cursor = normalizedEvent.pagingToken;
+          continue;
+        }
+
         try {
-          await handler(event);
+          await handler(normalizedEvent);
         } catch (err) {
           console.error(
-            `[stream] Handler error for event ${event.id} (type=${event.type}):`,
+            `[stream] Handler error for event ${normalizedEvent.id} (type=${normalizedEvent.type}):`,
             err
           );
         }
 
-        // BE-24: Skip already-processed events before hitting the handler or DB.
-        if (seenEventIds.has(event.id)) {
-          console.log(`[stream] Skipping duplicate event id=${event.id} tx=${event.txHash}`);
-          cursor = event.pagingToken;
-          continue;
-        }
-
-        await handler(event);
-        markSeen(event.id);
-        cursor = event.pagingToken;
+        markSeen(normalizedEvent.id);
+        cursor = normalizedEvent.pagingToken;
       }
 
       if (events.length === MAX_EVENTS_PER_PAGE) {
