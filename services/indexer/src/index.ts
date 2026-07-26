@@ -58,7 +58,10 @@ const POLL_INTERVAL_MS = process.env["POLL_INTERVAL_MS"]
 
 // ── Database ──────────────────────────────────────────────────────────────────
 
-const pgPool = new Pool({ connectionString: DATABASE_URL });
+const pgPool = new Pool({
+  connectionString: DATABASE_URL,
+  statement_timeout: parseInt(process.env["QUERY_TIMEOUT_MS"] ?? "", 10) || 30_000,
+});
 
 async function ensureEventsTable(): Promise<void> {
   // BE-28: Wrap in try/catch so a pre-existing table with a slightly
@@ -192,6 +195,44 @@ async function persistEvent(event: RawEvent): Promise<void> {
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
+  const replayStartLedger = process.env["REPLAY_START_LEDGER"];
+  const replayEndLedger = process.env["REPLAY_END_LEDGER"];
+
+  if (replayStartLedger && replayEndLedger) {
+    console.log("[indexer] Starting in REPLAY mode");
+    console.log(`[indexer] Replaying ledgers ${replayStartLedger}–${replayEndLedger}`);
+
+    await ensureEventsTable();
+    await runMigrations(pgPool);
+    await ensurePostSearchIndex();
+
+    const db = new PostgresDatabase(pgPool);
+    const app = createApp(db);
+    const server = app.listen(PORT, HOST);
+
+    console.log(`[indexer] API server ready at http://${HOST}:${PORT} (replay mode)`);
+
+    const signal = new AbortController().signal;
+    const { replayLedgerRange } = await import("./stream");
+
+    await replayLedgerRange(
+      {
+        rpcUrl: STELLAR_RPC_URL,
+        contractId: CONTRACT_ID,
+        startLedger: parseInt(replayStartLedger, 10),
+        endLedger: parseInt(replayEndLedger, 10),
+      },
+      persistEvent,
+      signal,
+    );
+
+    console.log("[indexer] Replay complete");
+
+    process.on("SIGTERM", () => server.close(() => process.exit(0)));
+    process.on("SIGINT", () => server.close(() => process.exit(0)));
+    return;
+  }
+
   console.log("[indexer] Starting Kovara indexer (STUB MODE)");
   console.log(`[indexer] Version: ${pkg.version} | Node: ${process.version}`);
   console.log(`[indexer] API server listening on ${HOST}:${PORT}`);

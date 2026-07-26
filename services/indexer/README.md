@@ -10,6 +10,29 @@ The indexer listens to Stellar contract events and processes them into a Postgre
 - **Database**: PostgreSQL with migrations for schema management
 - **Idempotency**: All handlers are idempotent using unique constraints and transaction hashes
 
+### Runtime Flow
+
+The following describes the main runtime flow from startup through event handling:
+
+1. **Configuration loading** (`src/index.ts`): Environment variables are validated and parsed. Required variables (`DATABASE_URL`, `STELLAR_RPC_URL`, `CONTRACT_ID`, `START_LEDGER`) must be set; optional variables have sensible defaults.
+
+2. **Database initialization** (`src/index.ts:60-126`): A PostgreSQL connection pool is created. Three initialization steps run sequentially:
+   - `ensureEventsTable()` — Creates the `events` table and supporting indexes if they do not exist (idempotent via `IF NOT EXISTS`).
+   - `runMigrations()` — Applies any unapplied SQL migration files from the `migrations/` directory in numerical order.
+   - `ensurePostSearchIndex()` — Adds and populates the `search_vector` column on the `posts` table for full-text search.
+
+3. **API server startup** (`src/index.ts:205-207`): The Express app is created via `createApp(db)` and starts listening on the configured `HOST:PORT`. The API is ready to serve requests immediately, even before event streaming begins.
+
+4. **Event streaming** (disabled in stub mode; `src/stream.ts`): When enabled, `streamEvents()` polls the Soroban RPC `getEvents` endpoint in a loop. Each batch of events is validated, normalized, deduplicated, and dispatched to the handler (`persistEvent`). The stream runs until an abort signal is received.
+
+   - **Polling loop**: After each batch, the stream waits `POLL_INTERVAL_MS` (default 5s) before the next poll, unless a full page of events was returned (which implies more are available immediately).
+   - **Deduplication**: An in-memory ring buffer of seen event IDs prevents redundant processing across overlapping RPC pages.
+   - **Retry**: Transient network errors are retried up to 3 times with exponential backoff.
+
+5. **Event replay** (`src/stream.ts`, BE-42): When `REPLAY_START_LEDGER` and `REPLAY_END_LEDGER` are set, the indexer starts in replay mode instead of live streaming. It iterates each ledger in the range and dispatches all matching events. This is useful for recovering from interruptions.
+
+6. **Graceful shutdown**: On `SIGTERM` or `SIGINT`, the HTTP server stops accepting new connections and the process exits. In replay mode, the abort signal is passed so the replay loop can terminate early.
+
 ## Event Handlers
 
 ### Post Handlers (`src/handlers/post.ts`)
@@ -163,6 +186,92 @@ Response:
 
 Each collection is capped at 1000 records. The `post_count`, `profile_count`, and `pool_count` fields reflect total counts in the database.
 
+## Common Operational Tasks
+
+### Starting the indexer
+
+```bash
+# Copy and configure environment
+cp .env.example .env
+# Edit .env with your values
+
+# Start with Docker Compose (recommended)
+docker compose up --build
+
+# Or start manually
+npm run dev        # development
+npm run build && npm start   # production
+```
+
+### Running a replay after interruption
+
+If the indexer was interrupted and missed some ledgers, set the replay range:
+
+```bash
+REPLAY_START_LEDGER=12345 REPLAY_END_LEDGER=13000 npm start
+```
+
+The indexer will process every ledger in the range [12345, 13000], then stop. After replay completes, remove the `REPLAY_*` variables and restart for live streaming.
+
+### Checking indexer health
+
+```bash
+curl http://localhost:3000/health
+# Expected: {"status":"ok","uptime":1234.56,"db":"ok"}
+```
+
+### Viewing version metadata
+
+```bash
+curl http://localhost:3000/version
+```
+
+### Exporting a debug snapshot
+
+```bash
+curl -H "x-debug-token: $DEBUG_TOKEN" http://localhost:3000/api/debug/snapshot
+```
+
+### Applying migrations manually
+
+```bash
+npm run migrate
+```
+
+### Adding a new migration
+
+```bash
+touch migrations/006_description.sql
+# Write DDL, then restart the indexer.
+```
+
+### Adjusting timeouts for external dependencies
+
+```bash
+# Database query timeout (ms, default 30000)
+QUERY_TIMEOUT_MS=60000
+
+# RPC fetch timeout (ms, default 15000)
+RPC_FETCH_TIMEOUT_MS=30000
+
+# API request timeout (ms, default 30000)
+REQUEST_TIMEOUT_MS=60000
+```
+
+### Monitoring the indexer
+
+Key metrics to track:
+- **Events per second**: Rate at which contract events are processed.
+- **Database query latency**: Time spent in PostgreSQL queries.
+- **Failed event count**: Events that could not be persisted.
+- **Current indexed ledger**: The latest ledger that has been processed.
+
+Logs include structured context for correlation:
+```
+[indexer] ledger=12345 type=PostCreatedEvent tx=abc...
+[stream] Starting from ledger 100, contract=CDEF...
+```
+
 ## Running Tests
 
 ```bash
@@ -268,6 +377,11 @@ See [`.env.example`](.env.example) for all required variables.
 | `GIT_COMMIT`           | Git commit hash (populated in `/version` response)                 |
 | `BUILD_TIME`           | ISO 8601 build timestamp (populated in `/version` response)        |
 | `CORS_ORIGIN`          | Allowed CORS origin(s) (default: all)  |
+| `QUERY_TIMEOUT_MS`     | Database query timeout in milliseconds (default: `30000`)          |
+| `RPC_FETCH_TIMEOUT_MS` | Soroban RPC fetch timeout in milliseconds (default: `15000`)       |
+| `REQUEST_TIMEOUT_MS`   | HTTP request timeout in milliseconds (default: `30000`)            |
+| `REPLAY_START_LEDGER`  | Start ledger for event replay (omit for live streaming)            |
+| `REPLAY_END_LEDGER`    | End ledger for event replay (inclusive, requires `REPLAY_START_LEDGER`) |
 
 
 ### Secure environment configuration

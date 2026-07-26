@@ -5,7 +5,6 @@ import rateLimit, { RateLimitRequestHandler } from "express-rate-limit";
 import crypto from "crypto";
 import { Database } from "../db";
 import { ApiErrorResponse, DebugSnapshot } from "./contracts";
-import { ApiErrorResponse } from "./contracts";
 import pkg from "../../package.json";
 
 const VERSION = pkg.version;
@@ -141,6 +140,17 @@ export function createApp(db: Database, options: AppOptions = {}): express.Appli
   app.use(cors());
 
   app.use(express.json());
+
+  // BE-17: Request timeout — abort requests that exceed the configured limit.
+  // The global error handler produces a consistent JSON response on timeout.
+  const REQUEST_TIMEOUT_MS = parseInt(process.env["REQUEST_TIMEOUT_MS"] ?? "", 10) || 30_000;
+  app.use((req: Request, res: Response, next: NextFunction): void => {
+    res.setTimeout(REQUEST_TIMEOUT_MS, () => {
+      res.status(503).json({ error: "Request timed out", code: "REQUEST_TIMEOUT" });
+      req.destroy();
+    });
+    next();
+  });
 
   // BE-25: Resolve auth middleware — use caller-supplied hook or fall back
   // to the no-op so anonymous access is unchanged by default.
