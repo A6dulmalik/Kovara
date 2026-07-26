@@ -129,11 +129,13 @@ export interface Database {
   adjustPoolBalance(pool_id: string, delta: bigint, ledger: number): Promise<void>;
   insertPool(pool: PoolRecord): Promise<void>;
   getPool(pool_id: string): Promise<PoolRecord | null>;
+  listPools(filters: { limit: number; offset: number }): Promise<{ pools: PoolRecord[]; total: number }>;
   addPoolAdmin(pool_id: string, admin: string, ledger: number): Promise<void>;
   removePoolAdmin(pool_id: string, admin: string, ledger: number): Promise<void>;
 
   // Query methods used by the REST API
   getProfile(address: string): Promise<Profile | null>;
+  listProfiles(filters: { limit: number; offset: number }): Promise<{ profiles: Profile[]; total: number }>;
   listPosts(filters: {
     author?: string;
     limit: number;
@@ -153,6 +155,16 @@ export interface Database {
     address: string,
     limit: number,
     offset: number
+  ): Promise<{ following: string[]; total: number }>;
+  getFollowersAfter(
+    address: string,
+    cursor: string,
+    limit: number
+  ): Promise<{ followers: string[]; total: number }>;
+  getFollowingAfter(
+    address: string,
+    cursor: string,
+    limit: number
   ): Promise<{ following: string[]; total: number }>;
 
   // Search
@@ -416,6 +428,31 @@ export class PostgresDatabase implements Database {
     return result.rowCount ? (result.rows[0] as PoolRecord) : null;
   }
 
+  async listPools(filters: {
+    limit: number;
+    offset: number;
+  }): Promise<{ pools: PoolRecord[]; total: number }> {
+    const { limit, offset } = filters;
+    const countResult = await this.pool.query(`SELECT COUNT(*)::int AS total FROM pools`);
+    const result = await this.pool.query(
+      `SELECT * FROM pools ORDER BY pool_id LIMIT $1 OFFSET $2`,
+      [limit, offset]
+    );
+
+    return {
+      pools: result.rows.map((row) => ({
+        pool_id: String(row.pool_id),
+        token: String(row.token),
+        balance: this.toBigInt(row.balance ?? 0),
+        admins: Array.isArray(row.admins) ? row.admins : [],
+        threshold: Number(row.threshold ?? 0),
+        created_ledger: Number(row.created_ledger ?? 0),
+        updated_ledger: Number(row.updated_ledger ?? 0),
+      })),
+      total: Number(countResult.rows[0]?.total ?? 0),
+    };
+  }
+
   async getTokenMetadata(
     token: string
   ): Promise<{ name: string; symbol: string; decimals: number } | null> {
@@ -469,6 +506,28 @@ export class PostgresDatabase implements Database {
     // Cache for subsequent reads.
     if (profile) this.profileCache.set(address, profile);
     return profile;
+  }
+
+  async listProfiles(filters: {
+    limit: number;
+    offset: number;
+  }): Promise<{ profiles: Profile[]; total: number }> {
+    const { limit, offset } = filters;
+    const countResult = await this.pool.query(`SELECT COUNT(*)::int AS total FROM profiles`);
+    const result = await this.pool.query(
+      `SELECT * FROM profiles ORDER BY address LIMIT $1 OFFSET $2`,
+      [limit, offset]
+    );
+
+    return {
+      profiles: result.rows.map((row) => ({
+        address: String(row.address),
+        username: String(row.username),
+        creator_token: String(row.creator_token),
+        updated_ledger: Number(row.updated_ledger),
+      })),
+      total: Number(countResult.rows[0]?.total ?? 0),
+    };
   }
 
   async listPosts(filters: {
@@ -578,6 +637,46 @@ export class PostgresDatabase implements Database {
     const result = await this.pool.query(
       `SELECT followee FROM follows WHERE follower = $1 ORDER BY followee LIMIT $2 OFFSET $3`,
       [address, limit, offset]
+    );
+
+    return {
+      following: result.rows.map((row) => String(row.followee)),
+      total: Number(countResult.rows[0]?.total ?? 0),
+    };
+  }
+
+  async getFollowersAfter(
+    address: string,
+    cursor: string,
+    limit: number
+  ): Promise<{ followers: string[]; total: number }> {
+    const countResult = await this.pool.query(
+      `SELECT COUNT(*)::int AS total FROM follows WHERE followee = $1`,
+      [address]
+    );
+    const result = await this.pool.query(
+      `SELECT follower FROM follows WHERE followee = $1 AND follower > $2 ORDER BY follower LIMIT $3`,
+      [address, cursor, limit]
+    );
+
+    return {
+      followers: result.rows.map((row) => String(row.follower)),
+      total: Number(countResult.rows[0]?.total ?? 0),
+    };
+  }
+
+  async getFollowingAfter(
+    address: string,
+    cursor: string,
+    limit: number
+  ): Promise<{ following: string[]; total: number }> {
+    const countResult = await this.pool.query(
+      `SELECT COUNT(*)::int AS total FROM follows WHERE follower = $1`,
+      [address]
+    );
+    const result = await this.pool.query(
+      `SELECT followee FROM follows WHERE follower = $1 AND followee > $2 ORDER BY followee LIMIT $3`,
+      [address, cursor, limit]
     );
 
     return {

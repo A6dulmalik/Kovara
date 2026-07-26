@@ -1,8 +1,18 @@
-import type { Pool, Post, Profile } from "../db";
+import type { Pool, Post, Profile, PoolRecord } from "../db";
 
 export interface ApiErrorResponse {
   error: string;
   code: string;
+}
+
+export interface DebugSnapshot {
+  posts: Post[];
+  profiles: Profile[];
+  pools: PoolRecord[];
+  generated_at: string;
+  post_count: number;
+  profile_count: number;
+  pool_count: number;
 }
 
 export interface PaginationResponse {
@@ -24,12 +34,16 @@ export interface FollowersResponse extends PaginationResponse {
   address: string;
   followers: string[];
   total: number;
+  next_offset: number | null;
+  prev_offset: number | null;
 }
 
 export interface FollowingResponse extends PaginationResponse {
   address: string;
   following: string[];
   total: number;
+  next_offset: number | null;
+  prev_offset: number | null;
 }
 
 export interface PoolResponse extends Pool {
