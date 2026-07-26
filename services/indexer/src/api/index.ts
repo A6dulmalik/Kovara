@@ -5,10 +5,31 @@ import rateLimit, { RateLimitRequestHandler } from "express-rate-limit";
 import crypto from "crypto";
 import { Database } from "../db";
 import { ApiErrorResponse, DebugSnapshot } from "./contracts";
-import { ApiErrorResponse } from "./contracts";
 import pkg from "../../package.json";
 
 const VERSION = pkg.version;
+
+// Configurable rate-limiter override for tests (see rate-limit.test.ts).
+let rateLimitWindowMs = 60_000;
+let rateLimitMax = 100;
+
+export function setRateLimit(windowMs: number, max: number): void {
+  rateLimitWindowMs = windowMs;
+  rateLimitMax = max;
+}
+
+function createLimiter(): RateLimitRequestHandler {
+  return rateLimit({
+    windowMs: rateLimitWindowMs,
+    max: rateLimitMax,
+    standardHeaders: true,
+    legacyHeaders: true,
+    message: {
+      error: "Too many requests, please try again later.",
+      code: "RATE_LIMIT_EXCEEDED",
+    },
+  });
+}
 
 // Enable BigInt JSON serialization (Express res.json uses JSON.stringify).
 (BigInt.prototype as unknown as Record<string, unknown>).toJSON = function () {
@@ -185,8 +206,8 @@ export function createApp(db: Database, options: AppOptions = {}): express.Appli
   });
 
   // Apply rate limiting to all /api routes.
-  // const apiLimiter = createLimiter();
-  // app.use("/api", apiLimiter);
+  const apiLimiter = createLimiter();
+  app.use("/api", apiLimiter);
 
   // BE-25: Apply the auth middleware to all /api routes after rate limiting.
   // Routes registered below this line are covered; the health check above is

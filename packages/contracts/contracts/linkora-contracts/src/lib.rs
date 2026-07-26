@@ -1,7 +1,7 @@
 #![no_std]
 use soroban_sdk::{
-    contract, contractevent, contractimpl, contracttype, symbol_short, token, Address, BytesN, Env,
-    Map, String, Symbol, Vec,
+    contract, contracterror, contractevent, contractimpl, contracttype, panic_with_error,
+    symbol_short, token, Address, BytesN, Env, Map, String, Symbol, Vec,
 };
 
 // ── Storage Key Enum ──────────────────────────────────────────────────────────
@@ -18,6 +18,55 @@ pub enum StorageKey {
     Blocks(Address),           // persistent: blocker -> Map<Address, ()>
     UsernameIndex(String), // persistent: username -> owner Address (reverse index for uniqueness)
     TipCooldown(u64, Address), // temporary: (post_id, tipper) -> last-tip ledger sequence number
+}
+
+// ── Error Codes ────────────────────────────────────────────────────────────────
+
+#[contracterror]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ContractError {
+    AlreadyInitialized = 1,
+    InvalidFee = 2,
+    InvalidUsername = 3,
+    InvalidCreatorToken = 4,
+    UsernameTaken = 5,
+    ProfileDoesNotExist = 6,
+    Blocked = 7,
+    InvalidContent = 8,
+    PostDoesNotExist = 9,
+    OnlyAuthorCanDeletePost = 10,
+    InvalidPaginationLimit = 11,
+    TipAmountMustBePositive = 12,
+    WrongTokenForTip = 13,
+    TipCooldownNotExpired = 14,
+    PoolAlreadyExists = 15,
+    InvalidThreshold = 16,
+    DepositAmountMustBePositive = 17,
+    PoolNotFound = 18,
+    WrongTokenForPool = 19,
+    MustBePositive = 20,
+    InsufficientSigners = 21,
+    UnauthorizedSigner = 22,
+    LowBalance = 23,
+    AdminAlreadyExists = 24,
+    AdminNotFound = 25,
+    ThresholdUnreachable = 26,
+    ThresholdMustBePositive = 27,
+    ThresholdExceedsAdminCount = 28,
+    CooldownMustBePositive = 29,
+    NotInitialized = 30,
+    TreasuryNotSet = 31,
+    FeeCalculationOverflow = 32,
+    TipTotalOverflow = 33,
+    PoolBalanceOverflow = 34,
+    PoolBalanceUnderflow = 35,
+    PostNotFound = 36,
+    UsernameTooShort = 37,
+    UsernameTooLong = 38,
+    InvalidUsernameCharacter = 39,
+    CreatorTokenCannotBeContract = 40,
+    ContentTooShort = 41,
+    ContentTooLong = 42,
 }
 
 // ── Instance-storage key constants (small scalars, not contracttype) ──────────
@@ -307,42 +356,39 @@ pub struct KovaraContract;
 
 // ── Validation Helpers ────────────────────────────────────────────────────────
 
-fn validate_username(username: &String) -> Result<(), &'static str> {
+fn validate_username(env: &Env, username: &String) {
     let len = username.len();
     if len < MIN_USERNAME_LEN {
-        return Err("username too short");
+        panic_with_error!(env, ContractError::UsernameTooShort);
     }
     if len > MAX_USERNAME_LEN {
-        return Err("username too long");
+        panic_with_error!(env, ContractError::UsernameTooLong);
     }
     let bytes = username.to_bytes();
     for i in 0..bytes.len() {
         let c = bytes.get(i).unwrap() as char;
         if !c.is_ascii_alphanumeric() && c != '_' {
-            return Err("invalid username character");
+            panic_with_error!(env, ContractError::InvalidUsernameCharacter);
         }
     }
-    Ok(())
 }
 
-fn validate_creator_token(env: &Env, token: &Address) -> Result<(), &'static str> {
+fn validate_creator_token(env: &Env, token: &Address) {
     if *token == env.current_contract_address() {
-        return Err("creator token cannot be the contract itself");
+        panic_with_error!(env, ContractError::CreatorTokenCannotBeContract);
     }
     let token_client = token::Client::new(env, token);
     token_client.name();
-    Ok(())
 }
 
-fn validate_content(content: &String) -> Result<(), &'static str> {
+fn validate_content(env: &Env, content: &String) {
     let len = content.len();
     if len < MIN_CONTENT_LEN {
-        return Err("empty content");
+        panic_with_error!(env, ContractError::ContentTooShort);
     }
     if len > MAX_CONTENT_LEN {
-        return Err("content too long");
+        panic_with_error!(env, ContractError::ContentTooLong);
     }
-    Ok(())
 }
 
 fn paginate<T>(env: &Env, list: &Vec<T>, offset: u32, limit: u32) -> Vec<T>
@@ -375,9 +421,11 @@ impl KovaraContract {
             .get::<Symbol, bool>(&INITIALIZED)
             .unwrap_or(false)
         {
-            panic!("already initialized");
+            panic_with_error!(&env, ContractError::AlreadyInitialized);
         }
-        assert!(fee_bps <= 10_000, "invalid fee");
+        if fee_bps > 10_000 {
+            panic_with_error!(&env, ContractError::InvalidFee);
+        }
         env.storage().instance().set(&INITIALIZED, &true);
         env.storage().instance().set(&ADMIN, &admin);
         env.storage().instance().set(&TREASURY, &treasury);
@@ -392,8 +440,8 @@ impl KovaraContract {
     pub fn set_profile(env: Env, user: Address, username: String, creator_token: Address) {
         Self::bump_instance(&env);
         user.require_auth();
-        validate_username(&username).expect("invalid username");
-        validate_creator_token(&env, &creator_token).expect("invalid creator token");
+        validate_username(&env, &username);
+        validate_creator_token(&env, &creator_token);
 
         let key = StorageKey::Profile(user.clone());
         let username_index_key = StorageKey::UsernameIndex(username.clone());
@@ -404,7 +452,7 @@ impl KovaraContract {
             .get::<_, Address>(&username_index_key)
         {
             if existing_owner != user {
-                panic!("username taken");
+                panic_with_error!(&env, ContractError::UsernameTaken);
             }
         }
 
@@ -471,7 +519,9 @@ impl KovaraContract {
             .storage()
             .persistent()
             .get(&key)
-            .unwrap_or_else(|| panic!("profile does not exist"));
+            .unwrap_or_else(|| {
+                panic_with_error!(&env, ContractError::ProfileDoesNotExist);
+            });
 
         env.storage()
             .persistent()
@@ -495,7 +545,7 @@ impl KovaraContract {
         follower.require_auth();
 
         if Self::is_blocked(env.clone(), followee.clone(), follower.clone()) {
-            panic!("blocked");
+            panic_with_error!(&env, ContractError::Blocked);
         }
 
         let following_key = StorageKey::Following(follower.clone());
@@ -565,10 +615,9 @@ impl KovaraContract {
     }
 
     pub fn get_following(env: Env, user: Address, offset: u32, limit: u32) -> Vec<Address> {
-        assert!(
-            limit > 0 && limit <= MAX_PAGINATION_LIMIT,
-            "limit must be between 1 and 50"
-        );
+        if limit == 0 || limit > MAX_PAGINATION_LIMIT {
+            panic_with_error!(&env, ContractError::InvalidPaginationLimit);
+        }
         let key = StorageKey::Following(user);
         let list: Vec<Address> = env
             .storage()
@@ -582,10 +631,9 @@ impl KovaraContract {
     }
 
     pub fn get_followers(env: Env, user: Address, offset: u32, limit: u32) -> Vec<Address> {
-        assert!(
-            limit > 0 && limit <= MAX_PAGE_LIMIT,
-            "limit must be between 1 and 50"
-        );
+        if limit == 0 || limit > MAX_PAGE_LIMIT {
+            panic_with_error!(&env, ContractError::InvalidPaginationLimit);
+        }
         let key = StorageKey::Followers(user);
         let list: Vec<Address> = env
             .storage()
@@ -644,7 +692,7 @@ impl KovaraContract {
     pub fn create_post(env: Env, author: Address, content: String) -> u64 {
         Self::bump_instance(&env);
         author.require_auth();
-        validate_content(&content).expect("invalid content");
+        validate_content(&env, &content);
 
         let id: u64 = env.storage().instance().get(&POST_CT).unwrap_or(0u64) + 1;
         let key = StorageKey::Post(id);
@@ -697,9 +745,11 @@ impl KovaraContract {
         author.require_auth();
         let key = StorageKey::Post(post_id);
         let post: Post = env.storage().persistent().get(&key).unwrap_or_else(|| {
-            panic!("post does not exist: {}", post_id);
+            panic_with_error!(&env, ContractError::PostDoesNotExist);
         });
-        assert!(post.author == author, "only author can delete post");
+        if post.author != author {
+            panic_with_error!(&env, ContractError::OnlyAuthorCanDeletePost);
+        }
         env.storage().persistent().remove(&key);
 
         // Remove post ID from author's posts list
@@ -724,10 +774,9 @@ impl KovaraContract {
     }
 
     pub fn get_posts_by_author(env: Env, author: Address, offset: u32, limit: u32) -> Vec<u64> {
-        assert!(
-            limit > 0 && limit <= MAX_PAGINATION_LIMIT,
-            "limit must be between 1 and 50"
-        );
+        if limit == 0 || limit > MAX_PAGINATION_LIMIT {
+            panic_with_error!(&env, ContractError::InvalidPaginationLimit);
+        }
 
         let key = StorageKey::AuthorPosts(author);
         let posts: Vec<u64> = env
@@ -757,13 +806,15 @@ impl KovaraContract {
 
         let post_key = StorageKey::Post(post_id);
         if !env.storage().persistent().has(&post_key) {
-            panic!("post does not exist");
+            panic_with_error!(&env, ContractError::PostDoesNotExist);
         }
         let mut post: Post = env
             .storage()
             .persistent()
             .get(&post_key)
-            .expect("post not found");
+            .unwrap_or_else(|| {
+                panic_with_error!(&env, ContractError::PostNotFound);
+            });
         post.like_count += 1;
         env.storage().persistent().set(&post_key, &post);
         Self::bump(&env, &post_key);
@@ -787,16 +838,18 @@ impl KovaraContract {
 
     pub fn tip(env: Env, tipper: Address, post_id: u64, token: Address, amount: i128) {
         Self::bump_instance(&env);
-        assert!(amount > 0, "tip amount must be positive");
+        if amount <= 0 {
+            panic_with_error!(&env, ContractError::TipAmountMustBePositive);
+        }
         tipper.require_auth();
 
         let key = StorageKey::Post(post_id);
         let mut post: Post = env.storage().persistent().get(&key).unwrap_or_else(|| {
-            panic!("post not found: {}", post_id);
+            panic_with_error!(&env, ContractError::PostNotFound);
         });
 
         if Self::is_blocked(env.clone(), post.author.clone(), tipper.clone()) {
-            panic!("blocked");
+            panic_with_error!(&env, ContractError::Blocked);
         }
 
         if let Some(profile) = env
@@ -804,7 +857,9 @@ impl KovaraContract {
             .persistent()
             .get::<_, Profile>(&StorageKey::Profile(post.author.clone()))
         {
-            assert!(profile.creator_token == token, "wrong token for tip");
+            if profile.creator_token != token {
+                panic_with_error!(&env, ContractError::WrongTokenForTip);
+            }
         }
 
         // Check tip cooldown: one tip per tipper per post per cooldown window.
@@ -818,10 +873,9 @@ impl KovaraContract {
 
         if let Some(last_tip_ledger) = env.storage().temporary().get::<_, u32>(&cooldown_key) {
             let ledgers_elapsed = current_ledger.saturating_sub(last_tip_ledger);
-            assert!(
-                ledgers_elapsed >= cooldown_window,
-                "tip cooldown not expired"
-            );
+            if ledgers_elapsed < cooldown_window {
+                panic_with_error!(&env, ContractError::TipCooldownNotExpired);
+            }
         }
 
         // Update last tip ledger
@@ -835,7 +889,9 @@ impl KovaraContract {
         // fee_bps is at most 10_000 (100%), so the multiplication can reach ~i128::MAX.
         let fee_amount = amount
             .checked_mul(fee_bps as i128)
-            .expect("fee calculation overflow")
+            .unwrap_or_else(|| {
+                panic_with_error!(&env, ContractError::FeeCalculationOverflow);
+            })
             / 10_000;
         let author_amount = amount - fee_amount; // safe: fee_amount ≤ amount
         let token_client = token::Client::new(&env, &token);
@@ -845,12 +901,16 @@ impl KovaraContract {
                 .storage()
                 .instance()
                 .get(&TREASURY)
-                .expect("treasury not set");
+                .unwrap_or_else(|| {
+                    panic_with_error!(&env, ContractError::TreasuryNotSet);
+                });
             token_client.transfer(&tipper, &treasury, &fee_amount);
         }
         token_client.transfer(&tipper, &post.author, &author_amount);
 
-        post.tip_total = post.tip_total.checked_add(amount).expect("tip_total overflow");
+        post.tip_total = post.tip_total.checked_add(amount).unwrap_or_else(|| {
+            panic_with_error!(&env, ContractError::TipTotalOverflow);
+        });
         env.storage().persistent().set(&key, &post);
         Self::bump(&env, &key);
 
@@ -878,11 +938,12 @@ impl KovaraContract {
         admin.require_auth();
         Self::require_admin(&env);
         let key = StorageKey::Pool(pool_id.clone());
-        assert!(!env.storage().persistent().has(&key), "pool exists");
-        assert!(
-            threshold > 0 && threshold <= initial_admins.len(),
-            "invalid threshold"
-        );
+        if env.storage().persistent().has(&key) {
+            panic_with_error!(&env, ContractError::PoolAlreadyExists);
+        }
+        if threshold == 0 || threshold > initial_admins.len() {
+            panic_with_error!(&env, ContractError::InvalidThreshold);
+        }
 
         // Clone admins for event payload before moving into storage
         let admins_for_event = initial_admins.clone();
@@ -915,25 +976,30 @@ impl KovaraContract {
         amount: i128,
     ) {
         Self::bump_instance(&env);
-        assert!(
-            amount > 0,
-            "deposit amount must be strictly greater than zero"
-        );
+        if amount <= 0 {
+            panic_with_error!(&env, ContractError::DepositAmountMustBePositive);
+        }
         depositor.require_auth();
         let key = StorageKey::Pool(pool_id.clone());
         let mut pool: Pool = env
             .storage()
             .persistent()
             .get(&key)
-            .expect("pool not found");
-        assert!(pool.token == token, "wrong token for pool");
+            .unwrap_or_else(|| {
+                panic_with_error!(&env, ContractError::PoolNotFound);
+            });
+        if pool.token != token {
+            panic_with_error!(&env, ContractError::WrongTokenForPool);
+        }
 
         token::Client::new(&env, &token).transfer(
             &depositor,
             env.current_contract_address(),
             &amount,
         );
-        pool.balance = pool.balance.checked_add(amount).expect("pool balance overflow");
+        pool.balance = pool.balance.checked_add(amount).unwrap_or_else(|| {
+            panic_with_error!(&env, ContractError::PoolBalanceOverflow);
+        });
         env.storage().persistent().set(&key, &pool);
         Self::bump(&env, &key);
 
@@ -954,25 +1020,34 @@ impl KovaraContract {
         recipient: Address,
     ) {
         Self::bump_instance(&env);
-        assert!(amount > 0, "must be positive");
+        if amount <= 0 {
+            panic_with_error!(&env, ContractError::MustBePositive);
+        }
         let key = StorageKey::Pool(pool_id.clone());
         let mut pool: Pool = env
             .storage()
             .persistent()
             .get(&key)
-            .expect("pool not found");
+            .unwrap_or_else(|| {
+                panic_with_error!(&env, ContractError::PoolNotFound);
+            });
 
-        assert!(signers.len() >= pool.threshold, "insufficient signers");
+        if signers.len() < pool.threshold {
+            panic_with_error!(&env, ContractError::InsufficientSigners);
+        }
         for signer in signers.iter() {
-            assert!(
-                pool.admins.iter().any(|x| x == signer),
-                "unauthorized signer"
-            );
+            if !pool.admins.iter().any(|x| x == signer) {
+                panic_with_error!(&env, ContractError::UnauthorizedSigner);
+            }
             signer.require_auth();
         }
-        assert!(pool.balance >= amount, "low balance");
+        if pool.balance < amount {
+            panic_with_error!(&env, ContractError::LowBalance);
+        }
 
-        pool.balance = pool.balance.checked_sub(amount).expect("pool balance underflow");
+        pool.balance = pool.balance.checked_sub(amount).unwrap_or_else(|| {
+            panic_with_error!(&env, ContractError::PoolBalanceUnderflow);
+        });
         env.storage().persistent().set(&key, &pool);
         Self::bump(&env, &key);
         token::Client::new(&env, &pool.token).transfer(
@@ -1004,7 +1079,9 @@ impl KovaraContract {
             .storage()
             .persistent()
             .get(&key)
-            .expect("pool not found");
+            .unwrap_or_else(|| {
+                panic_with_error!(&env, ContractError::PoolNotFound);
+            });
         Self::bump(&env, &key);
         pool.admins
     }
@@ -1016,21 +1093,23 @@ impl KovaraContract {
             .storage()
             .persistent()
             .get(&key)
-            .expect("pool not found");
+            .unwrap_or_else(|| {
+                panic_with_error!(&env, ContractError::PoolNotFound);
+            });
 
-        assert!(signers.len() >= pool.threshold, "insufficient signers");
+        if signers.len() < pool.threshold {
+            panic_with_error!(&env, ContractError::InsufficientSigners);
+        }
         for signer in signers.iter() {
-            assert!(
-                pool.admins.iter().any(|x| x == signer),
-                "unauthorized signer"
-            );
+            if !pool.admins.iter().any(|x| x == signer) {
+                panic_with_error!(&env, ContractError::UnauthorizedSigner);
+            }
             signer.require_auth();
         }
 
-        assert!(
-            !pool.admins.iter().any(|x| x == new_admin),
-            "admin already exists"
-        );
+        if pool.admins.iter().any(|x| x == new_admin) {
+            panic_with_error!(&env, ContractError::AdminAlreadyExists);
+        }
 
         pool.admins.push_back(new_admin.clone());
         env.storage().persistent().set(&key, &pool);
@@ -1046,14 +1125,17 @@ impl KovaraContract {
             .storage()
             .persistent()
             .get(&key)
-            .expect("pool not found");
+            .unwrap_or_else(|| {
+                panic_with_error!(&env, ContractError::PoolNotFound);
+            });
 
-        assert!(signers.len() >= pool.threshold, "insufficient signers");
+        if signers.len() < pool.threshold {
+            panic_with_error!(&env, ContractError::InsufficientSigners);
+        }
         for signer in signers.iter() {
-            assert!(
-                pool.admins.iter().any(|x| x == signer),
-                "unauthorized signer"
-            );
+            if !pool.admins.iter().any(|x| x == signer) {
+                panic_with_error!(&env, ContractError::UnauthorizedSigner);
+            }
             signer.require_auth();
         }
 
@@ -1066,11 +1148,12 @@ impl KovaraContract {
         }
         pool.admins = new_admins;
 
-        assert!(pool.admins.len() < initial_len, "admin not found");
-        assert!(
-            pool.threshold <= pool.admins.len(),
-            "threshold unreachable after removal"
-        );
+        if pool.admins.len() >= initial_len {
+            panic_with_error!(&env, ContractError::AdminNotFound);
+        }
+        if pool.threshold > pool.admins.len() {
+            panic_with_error!(&env, ContractError::ThresholdUnreachable);
+        }
 
         env.storage().persistent().set(&key, &pool);
         Self::bump(&env, &key);
@@ -1080,27 +1163,31 @@ impl KovaraContract {
 
     pub fn update_pool_threshold(env: Env, signers: Vec<Address>, pool_id: Symbol, threshold: u32) {
         Self::bump_instance(&env);
-        assert!(threshold > 0, "threshold must be positive");
+        if threshold == 0 {
+            panic_with_error!(&env, ContractError::ThresholdMustBePositive);
+        }
         let key = StorageKey::Pool(pool_id.clone());
         let mut pool: Pool = env
             .storage()
             .persistent()
             .get(&key)
-            .expect("pool not found");
+            .unwrap_or_else(|| {
+                panic_with_error!(&env, ContractError::PoolNotFound);
+            });
 
-        assert!(signers.len() >= pool.threshold, "insufficient signers");
+        if signers.len() < pool.threshold {
+            panic_with_error!(&env, ContractError::InsufficientSigners);
+        }
         for signer in signers.iter() {
-            assert!(
-                pool.admins.iter().any(|x| x == signer),
-                "unauthorized signer"
-            );
+            if !pool.admins.iter().any(|x| x == signer) {
+                panic_with_error!(&env, ContractError::UnauthorizedSigner);
+            }
             signer.require_auth();
         }
 
-        assert!(
-            threshold <= pool.admins.len(),
-            "threshold cannot exceed admin count"
-        );
+        if threshold > pool.admins.len() {
+            panic_with_error!(&env, ContractError::ThresholdExceedsAdminCount);
+        }
 
         let old_threshold = pool.threshold;
         pool.threshold = threshold;
@@ -1120,7 +1207,9 @@ impl KovaraContract {
     pub fn set_fee(env: Env, fee_bps: u32) {
         Self::bump_instance(&env);
         Self::require_admin(&env);
-        assert!(fee_bps <= 10_000, "invalid fee");
+        if fee_bps > 10_000 {
+            panic_with_error!(&env, ContractError::InvalidFee);
+        }
         let old_fee_bps = Self::get_fee_bps(env.clone());
         env.storage().instance().set(&FEE_BPS, &fee_bps);
         FeeUpdatedEvent {
@@ -1134,7 +1223,9 @@ impl KovaraContract {
     pub fn set_treasury(env: Env, treasury: Address) {
         Self::bump_instance(&env);
         Self::require_admin(&env);
-        let old_treasury = Self::get_treasury(env.clone()).expect("treasury not set");
+        let old_treasury = Self::get_treasury(env.clone()).unwrap_or_else(|| {
+            panic_with_error!(&env, ContractError::TreasuryNotSet);
+        });
         env.storage().instance().set(&TREASURY, &treasury);
         TreasuryUpdatedEvent {
             name: symbol_short!("treas_upd"),
@@ -1155,7 +1246,9 @@ impl KovaraContract {
     pub fn set_tip_cooldown_window(env: Env, cooldown_ledgers: u32) {
         Self::bump_instance(&env);
         Self::require_admin(&env);
-        assert!(cooldown_ledgers > 0, "cooldown must be positive");
+        if cooldown_ledgers == 0 {
+            panic_with_error!(&env, ContractError::CooldownMustBePositive);
+        }
         env.storage()
             .instance()
             .set(&TIP_COOLDOWN_WINDOW, &cooldown_ledgers);
@@ -1185,7 +1278,9 @@ impl KovaraContract {
             .storage()
             .instance()
             .get(&ADMIN)
-            .expect("not initialized");
+            .unwrap_or_else(|| {
+                panic_with_error!(env, ContractError::NotInitialized);
+            });
         admin.require_auth();
     }
 
