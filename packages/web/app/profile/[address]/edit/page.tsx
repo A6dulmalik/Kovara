@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 interface ProfileDraft {
   username: string;
   creator_token: string;
+  banner_url: string;
 }
 
 type SaveState = "idle" | "saving" | "success" | "error";
@@ -26,6 +27,7 @@ export default function ProfileEditPage() {
   const [draft, setDraft] = useState<ProfileDraft>({
     username: "",
     creator_token: "",
+    banner_url: "",
   });
   const [usernameError, setUsernameError] = useState("");
   const [saveState, setSaveState] = useState<SaveState>("idle");
@@ -38,6 +40,7 @@ export default function ProfileEditPage() {
       setDraft({
         username: "creator_alice",
         creator_token: "GABCDEF1234567890ABCDEF1234567890ABCDEF1",
+        banner_url: "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=1200&q=80",
       });
       setLoading(false);
     }, 300);
@@ -113,6 +116,26 @@ export default function ProfileEditPage() {
                 {usernameError}
               </span>
             )}
+          </div>
+
+          {/* Banner URL */}
+          <div style={styles.field}>
+            <label htmlFor="banner_url" style={styles.label}>
+              Banner URL
+            </label>
+            <input
+              id="banner_url"
+              type="url"
+              value={draft.banner_url}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, banner_url: e.target.value }))
+              }
+              placeholder="https://example.com/banner.jpg"
+              style={styles.input}
+            />
+            <span style={styles.hint}>
+              Optional cover image shown at the top of your profile.
+            </span>
           </div>
 
           {/* Creator token */}

@@ -1,16 +1,67 @@
 "use client";
 
+import { useState, useCallback, useRef, useEffect } from "react";
+import { KovaraClient } from "Kovara-sdk";
+import { useWallet } from "../../components/WalletProvider";
+import { config } from "../../src/config";
+
+// ── SDK-backed like/unlike transactions ─────────────────────────────────────
+
+async function contractLikePost(liker: string, postId: number): Promise<void> {
+  const client = new KovaraClient({
+    contractId: config.contractId,
+    rpcUrl: config.sorobanRpcUrl,
+    networkPassphrase: config.networkPassphrase,
+  });
+  const xdrEnv = client.like(liker, postId);
+
+  if (!window.freighterApi) {
+    throw new Error("Freighter wallet not detected");
+  }
+
+  const signed = await window.freighterApi.signAndSubmitTransaction({ txXdr: xdrEnv });
+  const txHash = signed?.hash ?? signed?.txHash;
+  if (!txHash) {
+    throw new Error("Transaction not confirmed");
+  }
+}
+
+async function contractUnlikePost(liker: string, postId: number): Promise<void> {
+  const client = new KovaraClient({
+    contractId: config.contractId,
+    rpcUrl: config.sorobanRpcUrl,
+    networkPassphrase: config.networkPassphrase,
+  });
+  const xdrEnv = client.unlike(liker, postId);
+
+  if (!window.freighterApi) {
+    throw new Error("Freighter wallet not detected");
+  }
+
+  const signed = await window.freighterApi.signAndSubmitTransaction({ txXdr: xdrEnv });
+  const txHash = signed?.hash ?? signed?.txHash;
+  if (!txHash) {
+    throw new Error("Transaction not confirmed");
+  }
+}
+
+// Type declaration for Freighter API
+declare global {
+  interface Window {
+    freighterApi?: {
+      signAndSubmitTransaction: (opts: { txXdr: string }) => Promise<{ hash?: string; txHash?: string }>;
+      signTransaction?: (opts: { txXdr: string }) => Promise<{ signedTxXdr?: string; signedXdr?: string; signedTx?: string }>;
+    };
+  }
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useWallet } from "../components/WalletProvider";
 import { classifyError } from "./usePoolContract";
+import { getContractClient, signAndSubmit } from "../../lib/contract/client";
 
-// ── Mock contract client ──────────────────────────────────────────────────────
-// Replace the body with the real SDK call once the generated client is wired up
-// (packages/sdk). Liking is idempotent on-chain: a second call by the same liker
-// is rejected, which is why the UI disables the button after the first like.
-async function contractLikePost(_liker: string, _postId: number): Promise<void> {
-  // TODO: replace with: await client.like_post({ liker, post_id: postId })
-  await new Promise((resolve) => setTimeout(resolve, 600));
+async function contractLikePost(liker: string, postId: number): Promise<void> {
+  const client = getContractClient();
+  const xdr = client.like(liker, postId);
+  await signAndSubmit(xdr);
 }
 
 export interface UseLikeOptions {
@@ -28,11 +79,12 @@ export interface UseLikeResult {
   pending: boolean;
   error: string | null;
   /**
-   * Like the post once. Optimistically bumps the count, rolls back on failure,
-   * and is a no-op when already liked or a request is in flight (idempotent).
-   * Resolves to `true` only when the like was committed.
+   * Like or unlike the post. Optimistically bumps the count, rolls back on failure,
+   * and is a no-op when a request is in flight (idempotent).
+   * Resolves to `true` only when the transaction was committed.
    */
   like: () => Promise<boolean>;
+  unlike: () => Promise<boolean>;
 }
 
 /**
@@ -88,14 +140,45 @@ export function useLike({
       // Roll back the optimistic update on transaction failure.
       setLiked(false);
       setLikeCount((c) => c - 1);
-      setError(classifyError(err));
+      const msg = err instanceof Error ? err.message : "Failed to like post";
+      setError(msg);
       return false;
     } finally {
       setPending(false);
     }
   }, [liked, pending, publicKey, postId]);
 
-  return { liked, likeCount, pending, error, like };
+  const unlike = useCallback(async (): Promise<boolean> => {
+    // Idempotent: ignore if not liked or a request is mid-flight.
+    if (!liked || pending) return false;
+    if (!publicKey) {
+      setError("Connect your wallet to unlike posts");
+      return false;
+    }
+
+    setPending(true);
+    setError(null);
+
+    // Optimistic update — reflect the unlike before the round-trip completes.
+    setLiked(false);
+    setLikeCount((c) => Math.max(0, c - 1));
+
+    try {
+      await contractUnlikePost(publicKey, postId);
+      return true;
+    } catch (err) {
+      // Roll back the optimistic update on transaction failure.
+      setLiked(true);
+      setLikeCount((c) => c + 1);
+      const msg = err instanceof Error ? err.message : "Failed to unlike post";
+      setError(msg);
+      return false;
+    } finally {
+      setPending(false);
+    }
+  }, [liked, pending, publicKey, postId]);
+
+  return { liked, likeCount, pending, error, like, unlike };
 }
 
-export { contractLikePost };
+export { contractLikePost, contractUnlikePost };

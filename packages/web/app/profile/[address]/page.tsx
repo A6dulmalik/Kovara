@@ -13,6 +13,7 @@ interface Profile {
   address: string;
   username: string;
   creator_token: string;
+  banner_url?: string;
   follower_count: number;
   following_count: number;
 }
@@ -181,6 +182,7 @@ export default function ProfilePage() {
         address,
         username: "creator_alice",
         creator_token: "GABCDEF1234567890ABCDEF1234567890ABCDEF1",
+        banner_url: "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=1200&q=80",
         follower_count: 142,
         following_count: 38,
       });
@@ -270,6 +272,7 @@ export default function ProfilePage() {
         address={profile.address}
         username={profile.username}
         creatorToken={profile.creator_token}
+        bannerUrl={profile.banner_url}
         followerCount={profile.follower_count}
         followingCount={profile.following_count}
         isOwnProfile={isOwnProfile}

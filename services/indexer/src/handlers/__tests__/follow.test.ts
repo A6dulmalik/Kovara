@@ -15,6 +15,7 @@ jest.mock("../../db");
 function makeMockDb(): jest.Mocked<Database> {
   return {
     upsertProfile: jest.fn(),
+    getFollow: jest.fn().mockResolvedValue(null),
     insertFollow: jest.fn().mockResolvedValue(undefined),
     deleteFollow: jest.fn().mockResolvedValue(undefined),
     insertPost: jest.fn(),
@@ -28,12 +29,18 @@ function makeMockDb(): jest.Mocked<Database> {
     adjustPoolBalance: jest.fn(),
     insertPool: jest.fn(),
     getPool: jest.fn(),
+    listPools: jest.fn().mockResolvedValue({ pools: [], total: 0 }),
     addPoolAdmin: jest.fn(),
     removePoolAdmin: jest.fn(),
     getProfile: jest.fn(),
+    listProfiles: jest.fn().mockResolvedValue({ profiles: [], total: 0 }),
     listPosts: jest.fn(),
     getFollowers: jest.fn(),
     getFollowing: jest.fn(),
+    getFollowersAfter: jest.fn(),
+    getFollowingAfter: jest.fn(),
+    searchPosts: jest.fn().mockResolvedValue({ posts: [], total: 0 }),
+    getTokenMetadata: jest.fn().mockResolvedValue(null),
   } as jest.Mocked<Database>;
 }
 
@@ -57,6 +64,7 @@ describe("handleFollow", () => {
 
     await handleFollow(db, event);
 
+    expect(db.getFollow).toHaveBeenCalledWith("GABC123", "GXYZ789");
     expect(db.insertFollow).toHaveBeenCalledTimes(1);
     expect(db.insertFollow).toHaveBeenCalledWith({
       follower: "GABC123",
@@ -77,7 +85,13 @@ describe("handleFollow", () => {
 
   // ── Idempotency ─────────────────────────────────────────────────────────────
 
-  it("is idempotent — replaying the same follow event calls insertFollow again", async () => {
+  it("skips insert when the follow already exists", async () => {
+    db.getFollow.mockResolvedValueOnce({
+      follower: "GABC123",
+      followee: "GXYZ789",
+      ledger: 50,
+    });
+
     const event: FollowEvent = {
       follower: "GABC123",
       followee: "GXYZ789",
@@ -85,10 +99,23 @@ describe("handleFollow", () => {
     };
 
     await handleFollow(db, event);
+
+    expect(db.getFollow).toHaveBeenCalledWith("GABC123", "GXYZ789");
+    expect(db.insertFollow).not.toHaveBeenCalled();
+  });
+
+  it("inserts when getFollow returns null", async () => {
+    db.getFollow.mockResolvedValueOnce(null);
+
+    const event: FollowEvent = {
+      follower: "GABC123",
+      followee: "GXYZ789",
+      ledger: 100,
+    };
+
     await handleFollow(db, event);
 
-    // Handler delegates idempotency to the db layer (upsert on composite key).
-    expect(db.insertFollow).toHaveBeenCalledTimes(2);
+    expect(db.insertFollow).toHaveBeenCalledTimes(1);
   });
 
   // ── Validation ──────────────────────────────────────────────────────────────
@@ -146,6 +173,12 @@ describe("handleUnfollow", () => {
   // ── Happy path ──────────────────────────────────────────────────────────────
 
   it("calls db.deleteFollow with correct follower and followee", async () => {
+    db.getFollow.mockResolvedValueOnce({
+      follower: "GABC123",
+      followee: "GXYZ789",
+      ledger: 100,
+    });
+
     const event: UnfollowEvent = {
       follower: "GABC123",
       followee: "GXYZ789",
@@ -154,11 +187,18 @@ describe("handleUnfollow", () => {
 
     await handleUnfollow(db, event);
 
+    expect(db.getFollow).toHaveBeenCalledWith("GABC123", "GXYZ789");
     expect(db.deleteFollow).toHaveBeenCalledTimes(1);
     expect(db.deleteFollow).toHaveBeenCalledWith("GABC123", "GXYZ789");
   });
 
   it("resolves without error for a valid event", async () => {
+    db.getFollow.mockResolvedValueOnce({
+      follower: "GABC123",
+      followee: "GXYZ789",
+      ledger: 100,
+    });
+
     const event: UnfollowEvent = {
       follower: "GABC123",
       followee: "GXYZ789",
@@ -170,7 +210,9 @@ describe("handleUnfollow", () => {
 
   // ── Idempotency ─────────────────────────────────────────────────────────────
 
-  it("is idempotent — replaying the same unfollow event calls deleteFollow again", async () => {
+  it("skips delete when the follow does not exist", async () => {
+    db.getFollow.mockResolvedValueOnce(null);
+
     const event: UnfollowEvent = {
       follower: "GABC123",
       followee: "GXYZ789",
@@ -178,10 +220,27 @@ describe("handleUnfollow", () => {
     };
 
     await handleUnfollow(db, event);
+
+    expect(db.getFollow).toHaveBeenCalledWith("GABC123", "GXYZ789");
+    expect(db.deleteFollow).not.toHaveBeenCalled();
+  });
+
+  it("deletes when getFollow returns a follow", async () => {
+    db.getFollow.mockResolvedValueOnce({
+      follower: "GABC123",
+      followee: "GXYZ789",
+      ledger: 100,
+    });
+
+    const event: UnfollowEvent = {
+      follower: "GABC123",
+      followee: "GXYZ789",
+      ledger: 150,
+    };
+
     await handleUnfollow(db, event);
 
-    // Deleting a non-existent edge is a no-op at the db layer.
-    expect(db.deleteFollow).toHaveBeenCalledTimes(2);
+    expect(db.deleteFollow).toHaveBeenCalledTimes(1);
   });
 
   // ── Validation ──────────────────────────────────────────────────────────────
@@ -215,6 +274,11 @@ describe("handleUnfollow", () => {
   // ── Database error propagation ──────────────────────────────────────────────
 
   it("propagates database errors", async () => {
+    db.getFollow.mockResolvedValueOnce({
+      follower: "GABC123",
+      followee: "GXYZ789",
+      ledger: 100,
+    });
     db.deleteFollow.mockRejectedValueOnce(new Error("DB delete failed"));
 
     const event: UnfollowEvent = {

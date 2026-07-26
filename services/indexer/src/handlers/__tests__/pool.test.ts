@@ -26,6 +26,7 @@ jest.mock("../../db");
 function makeMockDb(): jest.Mocked<Database> {
   return {
     upsertProfile: jest.fn(),
+    getFollow: jest.fn().mockResolvedValue(null),
     insertFollow: jest.fn(),
     deleteFollow: jest.fn(),
     insertPost: jest.fn(),
@@ -39,12 +40,18 @@ function makeMockDb(): jest.Mocked<Database> {
     adjustPoolBalance: jest.fn().mockResolvedValue(undefined),
     insertPool: jest.fn().mockResolvedValue(undefined),
     getPool: jest.fn().mockResolvedValue(null),
+    listPools: jest.fn().mockResolvedValue({ pools: [], total: 0 }),
     addPoolAdmin: jest.fn().mockResolvedValue(undefined),
     removePoolAdmin: jest.fn().mockResolvedValue(undefined),
     getProfile: jest.fn().mockResolvedValue(null),
+    listProfiles: jest.fn().mockResolvedValue({ profiles: [], total: 0 }),
     listPosts: jest.fn().mockResolvedValue({ posts: [], total: 0 }),
     getFollowers: jest.fn().mockResolvedValue({ followers: [], total: 0 }),
     getFollowing: jest.fn().mockResolvedValue({ following: [], total: 0 }),
+    getFollowersAfter: jest.fn().mockResolvedValue({ followers: [], total: 0 }),
+    getFollowingAfter: jest.fn().mockResolvedValue({ following: [], total: 0 }),
+    searchPosts: jest.fn().mockResolvedValue({ posts: [], total: 0 }),
+    getTokenMetadata: jest.fn().mockResolvedValue(null),
   } as jest.Mocked<Database>;
 }
 
