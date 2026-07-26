@@ -24,6 +24,8 @@
 import { createApp } from "./api";
 import { runMigrations } from "./migrate";
 import { PostgresDatabase } from "./db";
+import { withRetry } from "./retry";
+import pkg from "../package.json";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -124,22 +126,45 @@ async function ensurePostSearchIndex(): Promise<void> {
 }
 
 async function persistEvent(event: RawEvent): Promise<void> {
-  await pgPool.query(
-    `
-    INSERT INTO events
-      (event_id, ledger, contract_id, topic, value, tx_hash, closed_at)
-    VALUES ($1, $2, $3, $4, $5, $6, $7)
-    ON CONFLICT (event_id) DO NOTHING
-    `,
-    [
-      event.id,
-      event.ledger,
-      event.contractId,
-      event.topic,
-      event.value,
-      event.txHash,
-      new Date(event.ledgerClosedAt),
-    ]
+  await withRetry(
+    () =>
+      pgPool.query(
+        `
+        INSERT INTO events
+          (event_id, ledger, contract_id, topic, value, tx_hash, closed_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (event_id) DO NOTHING
+        `,
+        [
+          event.id,
+          event.ledger,
+          event.contractId,
+          event.topic,
+          event.value,
+          event.txHash,
+          new Date(event.ledgerClosedAt),
+        ]
+      ),
+    {
+      maxAttempts: 3,
+      baseDelayMs: 300,
+      backoffMultiplier: 2,
+      isRetryable: (err: unknown) => {
+        if (err instanceof Error) {
+          const msg = err.message.toLowerCase();
+          return (
+            msg.includes("connection") ||
+            msg.includes("timeout") ||
+            msg.includes("econnreset") ||
+            msg.includes("econnrefused") ||
+            msg.includes("socket hang up") ||
+            msg.includes("pool exhausted")
+          );
+        }
+        return false;
+      },
+      operationLabel: "persistEvent",
+    }
   );
 }
 
@@ -168,6 +193,7 @@ async function persistEvent(event: RawEvent): Promise<void> {
 
 async function main(): Promise<void> {
   console.log("[indexer] Starting Kovara indexer (STUB MODE)");
+  console.log(`[indexer] Version: ${pkg.version} | Node: ${process.version}`);
   console.log(`[indexer] API server listening on ${HOST}:${PORT}`);
   console.log("[indexer] Database and event streaming disabled for stub mode");
 

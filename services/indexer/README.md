@@ -91,11 +91,36 @@ Returns:
 { "status": "ok", "uptime": 1234.56 }
 ```
 
+## Version Endpoint
+
+```bash
+curl http://localhost:3000/version
+```
+
+Returns:
+
+```json
+{
+  "version": "0.1.0",
+  "git_commit": "abc1234",
+  "build_time": "2024-01-15T10:30:00Z",
+  "node_version": "v18.17.0"
+}
+```
+
+The `version` field is read from `package.json`. The `git_commit` and
+`build_time` fields can be injected via environment variables at build time
+(`GIT_COMMIT`, `BUILD_TIME`) and default to `"unknown"` when not set.
+
 ## API Routes
 
 ### Profiles
 
 - `GET /api/profiles/:address` — Get profile by Stellar address
+
+### Version
+
+- `GET /version` — Service version and build metadata (no auth required)
 
 ### Posts
 
@@ -240,6 +265,8 @@ See [`.env.example`](.env.example) for all required variables.
 | `TRUST_PROXY`          | Express trust-proxy setting; set to `1` only behind a trusted proxy |
 | `RATE_LIMIT_WINDOW_MS` | Rate-limit window in milliseconds (default: `60000`)                |
 | `RATE_LIMIT_MAX`       | Maximum requests per window per IP (default: `100`)                |
+| `GIT_COMMIT`           | Git commit hash (populated in `/version` response)                 |
+| `BUILD_TIME`           | ISO 8601 build timestamp (populated in `/version` response)        |
 | `CORS_ORIGIN`          | Allowed CORS origin(s) (default: all)  |
 
 

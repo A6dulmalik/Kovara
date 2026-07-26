@@ -34,12 +34,16 @@ export interface FollowersResponse extends PaginationResponse {
   address: string;
   followers: string[];
   total: number;
+  next_offset: number | null;
+  prev_offset: number | null;
 }
 
 export interface FollowingResponse extends PaginationResponse {
   address: string;
   following: string[];
   total: number;
+  next_offset: number | null;
+  prev_offset: number | null;
 }
 
 export interface PoolResponse extends Pool {

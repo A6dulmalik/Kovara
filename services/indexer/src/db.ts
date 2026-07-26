@@ -156,6 +156,16 @@ export interface Database {
     limit: number,
     offset: number
   ): Promise<{ following: string[]; total: number }>;
+  getFollowersAfter(
+    address: string,
+    cursor: string,
+    limit: number
+  ): Promise<{ followers: string[]; total: number }>;
+  getFollowingAfter(
+    address: string,
+    cursor: string,
+    limit: number
+  ): Promise<{ following: string[]; total: number }>;
 
   // Search
   searchPosts(query: string, limit: number, offset: number): Promise<{
@@ -174,6 +184,12 @@ export interface Database {
 export class PostgresDatabase implements Database {
   // In-memory caches for frequently-queryable records (BE-18).
   // Short TTL balances read performance with eventual consistency.
+  //
+  // Cache invalidation strategy (BE-33): Every write method that mutates a
+  // cached entity deletes the corresponding cache entry *before* issuing the
+  // SQL statement. This ensures that any subsequent read will fetch the latest
+  // committed state from Postgres rather than returning a stale cached value.
+  // The TTL acts as a safety net for entries that were not explicitly invalidated.
   private readonly profileCache = new TTLCache<Profile>(30_000); // 30 seconds
   private readonly postCache = new TTLCache<Post>(30_000);
 
@@ -281,7 +297,7 @@ export class PostgresDatabase implements Database {
     );
   }
 
-  async markPostDeleted(post_id: bigint, deleted_ledger: number): Promise<void> {
+  async markPostDeleted(post_id: bigint, deleted_ledger: number, deleted_at?: Date): Promise<void> {
     this.postCache.delete(post_id.toString());
     await this.pool.query(
       `
@@ -289,7 +305,7 @@ export class PostgresDatabase implements Database {
       SET deleted_at = COALESCE($3, NOW()), deleted_ledger = $2
       WHERE id = $1 AND deleted_at IS NULL
       `,
-      [post_id.toString(), deleted_ledger, ts]
+      [post_id.toString(), deleted_ledger, deleted_at ?? null]
     );
   }
 
@@ -621,6 +637,46 @@ export class PostgresDatabase implements Database {
     const result = await this.pool.query(
       `SELECT followee FROM follows WHERE follower = $1 ORDER BY followee LIMIT $2 OFFSET $3`,
       [address, limit, offset]
+    );
+
+    return {
+      following: result.rows.map((row) => String(row.followee)),
+      total: Number(countResult.rows[0]?.total ?? 0),
+    };
+  }
+
+  async getFollowersAfter(
+    address: string,
+    cursor: string,
+    limit: number
+  ): Promise<{ followers: string[]; total: number }> {
+    const countResult = await this.pool.query(
+      `SELECT COUNT(*)::int AS total FROM follows WHERE followee = $1`,
+      [address]
+    );
+    const result = await this.pool.query(
+      `SELECT follower FROM follows WHERE followee = $1 AND follower > $2 ORDER BY follower LIMIT $3`,
+      [address, cursor, limit]
+    );
+
+    return {
+      followers: result.rows.map((row) => String(row.follower)),
+      total: Number(countResult.rows[0]?.total ?? 0),
+    };
+  }
+
+  async getFollowingAfter(
+    address: string,
+    cursor: string,
+    limit: number
+  ): Promise<{ following: string[]; total: number }> {
+    const countResult = await this.pool.query(
+      `SELECT COUNT(*)::int AS total FROM follows WHERE follower = $1`,
+      [address]
+    );
+    const result = await this.pool.query(
+      `SELECT followee FROM follows WHERE follower = $1 AND followee > $2 ORDER BY followee LIMIT $3`,
+      [address, cursor, limit]
     );
 
     return {

@@ -75,15 +75,6 @@ export function createPostsRouter(db: Database): Router {
       }
 
       const { posts, total } = await db.listPosts({ author, limit: rawLimit, offset: rawOffset });
-      res.json(
-        serializeBigInt({
-          posts,
-          total,
-          limit: rawLimit,
-          offset: rawOffset,
-          has_more: rawOffset + posts.length < total,
-        })
-      );
       res.json({
         posts: posts.map(serializePost),
         total,
@@ -122,7 +113,6 @@ export function createPostsRouter(db: Database): Router {
         return;
       }
 
-      res.json(serializeBigInt(post));
       res.json(serializePost(post) as unknown as PostResponse);
     }
   );
