@@ -311,17 +311,18 @@ export class PostgresDatabase implements Database {
 
   async incrementPostLikeCount(post_id: bigint): Promise<void> {
     this.postCache.delete(post_id.toString());
-    await this.pool.query(`UPDATE posts SET like_count = like_count + 1 WHERE id = $1`, [
-      post_id.toString(),
-    ]);
+    await this.pool.query(
+      `UPDATE posts SET like_count = like_count + 1 WHERE id = $1 AND deleted_at IS NULL`,
+      [post_id.toString()]
+    );
   }
 
   async addPostTipTotal(post_id: bigint, net_amount: bigint): Promise<void> {
     this.postCache.delete(post_id.toString());
-    await this.pool.query(`UPDATE posts SET tip_total = tip_total + $2 WHERE id = $1`, [
-      post_id.toString(),
-      net_amount.toString(),
-    ]);
+    await this.pool.query(
+      `UPDATE posts SET tip_total = tip_total + $2 WHERE id = $1 AND deleted_at IS NULL`,
+      [post_id.toString(), net_amount.toString()]
+    );
   }
 
   async getPost(post_id: bigint): Promise<Post | null> {
