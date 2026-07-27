@@ -547,6 +547,9 @@ impl KovaraContract {
         if Self::is_blocked(env.clone(), followee.clone(), follower.clone()) {
             panic_with_error!(&env, ContractError::Blocked);
         }
+        if Self::is_blocked(env.clone(), follower.clone(), followee.clone()) {
+            panic_with_error!(&env, ContractError::Blocked);
+        }
 
         let following_key = StorageKey::Following(follower.clone());
         let mut following_list: Vec<Address> = env
@@ -849,6 +852,9 @@ impl KovaraContract {
         });
 
         if Self::is_blocked(env.clone(), post.author.clone(), tipper.clone()) {
+            panic_with_error!(&env, ContractError::Blocked);
+        }
+        if Self::is_blocked(env.clone(), tipper.clone(), post.author.clone()) {
             panic_with_error!(&env, ContractError::Blocked);
         }
 
