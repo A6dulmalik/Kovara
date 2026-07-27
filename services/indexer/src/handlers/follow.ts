@@ -1,8 +1,5 @@
-/**
- * Handlers for Follow and Unfollow contract events.
- */
-
 import { Database } from "../db";
+import { logger } from "../logger";
 
 export interface FollowEvent {
   follower: string;

@@ -1,10 +1,4 @@
-/**
- * Soroban event streaming via Horizon/Soroban RPC.
- *
- * Polls getEvents on the configured RPC endpoint and yields raw contract
- * events for the Kovara contract. Callers provide a cursor (latest processed
- * ledger) so the stream can resume after a restart.
- */
+import { logger } from "./logger";
 
 import { normalizeRawEvent } from "./normalize";
 import { withRetry } from "./retry";
@@ -222,7 +216,7 @@ export async function streamEvents(
 
       startLedger = latestLedger;
     } catch (err) {
-      console.error("[stream] Error fetching events:", err);
+      logger.error("Error fetching events:", err);
     }
 
     await new Promise<void>((resolve) => {
@@ -234,5 +228,5 @@ export async function streamEvents(
     });
   }
 
-  console.log("[stream] Stopped.");
+  logger.always("Stopped.");
 }

@@ -5,10 +5,31 @@ import rateLimit, { RateLimitRequestHandler } from "express-rate-limit";
 import crypto from "crypto";
 import { Database } from "../db";
 import { ApiErrorResponse, DebugSnapshot } from "./contracts";
-import { ApiErrorResponse } from "./contracts";
 import pkg from "../../package.json";
 
 const VERSION = pkg.version;
+
+// Configurable rate-limiter override for tests (see rate-limit.test.ts).
+let rateLimitWindowMs = 60_000;
+let rateLimitMax = 100;
+
+export function setRateLimit(windowMs: number, max: number): void {
+  rateLimitWindowMs = windowMs;
+  rateLimitMax = max;
+}
+
+function createLimiter(): RateLimitRequestHandler {
+  return rateLimit({
+    windowMs: rateLimitWindowMs,
+    max: rateLimitMax,
+    standardHeaders: true,
+    legacyHeaders: true,
+    message: {
+      error: "Too many requests, please try again later.",
+      code: "RATE_LIMIT_EXCEEDED",
+    },
+  });
+}
 
 // Enable BigInt JSON serialization (Express res.json uses JSON.stringify).
 (BigInt.prototype as unknown as Record<string, unknown>).toJSON = function () {
@@ -185,21 +206,18 @@ export function createApp(db: Database, options: AppOptions = {}): express.Appli
   });
 
   // Apply rate limiting to all /api routes.
-  // const apiLimiter = createLimiter();
-  // app.use("/api", apiLimiter);
+  const apiLimiter = createLimiter();
+  app.use("/api", apiLimiter);
 
   // BE-25: Apply the auth middleware to all /api routes after rate limiting.
   // Routes registered below this line are covered; the health check above is
   // intentionally excluded.
   app.use("/api", authMiddleware);
 
-  // ── Resource routes ────────────────────────────────────────────────────────
   app.use("/api/profiles", createProfilesRouter(db));
   app.use("/api/posts", createPostsRouter(db));
   app.use("/api/follows", createFollowsRouter(db));
   app.use("/api/pools", createPoolsRouter(db));
-
-  // ── Search endpoint ──────────────────────────────────────────────────────────
 
   interface SearchQuery {
     query: string;
@@ -293,22 +311,17 @@ export function createApp(db: Database, options: AppOptions = {}): express.Appli
       const offset = body.offset !== undefined ? Number(body.offset) : DEFAULT_OFFSET;
 
       if (!Number.isInteger(limit) || limit < 1) {
-        res.status(400).json({ error: "limit must be a positive integer", code: "INVALID_QUERY" });
+        sendError(res, 400, "limit must be a positive integer", "INVALID_QUERY");
         return;
       }
 
       if (limit > MAX_LIMIT) {
-        res.status(400).json({
-          error: `limit cannot exceed ${MAX_LIMIT}`,
-          code: "LIMIT_EXCEEDED",
-        });
+        sendError(res, 400, `limit cannot exceed ${MAX_LIMIT}`, "LIMIT_EXCEEDED");
         return;
       }
 
       if (!Number.isInteger(offset) || offset < 0) {
-        res
-          .status(400)
-          .json({ error: "offset must be a non-negative integer", code: "INVALID_QUERY" });
+        sendError(res, 400, "offset must be a non-negative integer", "INVALID_QUERY");
         return;
       }
 

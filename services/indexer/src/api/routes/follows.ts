@@ -13,15 +13,9 @@ function parsePagination(
   const rawOffset = query.offset !== undefined ? Number(query.offset) : DEFAULT_OFFSET;
   const cursor = query.cursor !== undefined ? String(query.cursor) : undefined;
 
-  if (!Number.isInteger(rawLimit) || rawLimit < 1) {
-    return { error: "limit must be a positive integer", code: "INVALID_QUERY" };
-  }
-  if (rawLimit > MAX_LIMIT) {
-    return { error: `limit cannot exceed ${MAX_LIMIT}`, code: "LIMIT_EXCEEDED" };
-  }
-  if (!Number.isInteger(rawOffset) || rawOffset < 0) {
-    return { error: "offset must be a non-negative integer", code: "INVALID_QUERY" };
-  }
+    if (!Number.isInteger(rawLimit) || rawLimit < 1) return null;
+    if (rawLimit > 100) return null;
+    if (!Number.isInteger(rawOffset) || rawOffset < 0) return null;
 
   return { limit: rawLimit, offset: rawOffset, cursor };
 }

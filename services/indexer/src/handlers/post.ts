@@ -1,9 +1,5 @@
-/**
- * Post Event Handlers
- * Handles PostCreatedEvent and PostDeletedEvent from the Kovara contract
- */
-
 import { Pool } from "pg";
+import { logger } from "../logger";
 
 export interface PostCreatedEvent {
   id: bigint;
@@ -19,7 +15,7 @@ export interface PostEventContext {
   txHash: string;
   ledgerSeq: number;
   timestamp: Date;
-  content?: string; // Fetched from contract state if needed
+  content?: string;
 }
 
 /**
@@ -51,8 +47,6 @@ export async function handlePostCreated(
 ): Promise<void> {
   const { id, author } = event;
   const { timestamp, content } = context;
-
-  // Fetch content from contract state if not provided
   const postContent = content || "";
 
   const query = `
@@ -65,8 +59,8 @@ export async function handlePostCreated(
     id.toString(),
     author,
     postContent,
-    0, // Initial tip_total
-    0, // Initial like_count
+    0,
+    0,
     timestamp,
   ];
 
@@ -74,12 +68,12 @@ export async function handlePostCreated(
     const result = await pool.query(query, values);
 
     if (result.rowCount === 0) {
-      console.log(`Post ${id} already exists (idempotent skip)`);
+      logger.info(`Post ${id} already exists (idempotent skip)`);
     } else {
-      console.log(`Post ${id} created by ${author}`);
+      logger.always(`Post ${id} created by ${author}`);
     }
   } catch (error) {
-    console.error(`Error handling PostCreatedEvent for post ${id}:`, error);
+    logger.error(`Error handling PostCreatedEvent for post ${id}:`, error);
     throw error;
   }
 }
@@ -116,33 +110,20 @@ export async function handlePostDeleted(
     const result = await pool.query(query, values);
 
     if (result.rowCount === 0) {
-      console.log(`Post ${post_id} already deleted or not found (idempotent skip)`);
+      logger.info(`Post ${post_id} already deleted or not found (idempotent skip)`);
     } else {
-      console.log(`Post ${post_id} deleted by ${author}`);
+      logger.always(`Post ${post_id} deleted by ${author}`);
     }
   } catch (error) {
-    console.error(`Error handling PostDeletedEvent for post ${post_id}:`, error);
+    logger.error(`Error handling PostDeletedEvent for post ${post_id}:`, error);
     throw error;
   }
 }
 
-/**
- * Fetch post content from contract state
- * This is a placeholder - implement based on your Stellar SDK setup
- */
 export async function fetchPostContent(_contractId: string, _postId: bigint): Promise<string> {
-  // TODO: Implement contract state fetch using Stellar SDK
-  // Example:
-  // const contract = new Contract(contractId);
-  // const post = await contract.call('get_post', postId);
-  // return post.content;
-
   return "";
 }
 
-/**
- * Unit test helper: Mock event data
- */
 export function createMockPostCreatedEvent(
   id: bigint = 1n,
   author: string = "GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"

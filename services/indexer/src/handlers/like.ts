@@ -1,9 +1,5 @@
-/**
- * Like Event Handler
- * Handles LikePostEvent from the Kovara contract
- */
-
 import { Pool } from "pg";
+import { logger } from "../logger";
 
 export interface LikePostEvent {
   user: string;
@@ -122,9 +118,6 @@ export async function handleLike(
   }
 }
 
-/**
- * Unit test helper: Mock event data
- */
 export function createMockLikeEvent(
   user: string = "GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
   post_id: bigint = 1n
