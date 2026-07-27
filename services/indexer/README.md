@@ -156,9 +156,9 @@ The `version` field is read from `package.json`. The `git_commit` and
 - `GET /api/follows/:address/followers?limit=<n>&offset=<n>` — List followers
 - `GET /api/follows/:address/following?limit=<n>&offset=<n>` — List accounts the address follows
 
-### Pools
+### Pools (Experimental)
 
-- `GET /api/pools/:id` — Get pool state by ID
+- `GET /api/pools/:id` — Get pool state by ID (enabled via `EXPERIMENTAL_FEATURES=true`)
 
 ### Debug Snapshot (BE-29)
 
@@ -380,6 +380,9 @@ See [`.env.example`](.env.example) for all required variables.
 | `QUERY_TIMEOUT_MS`     | Database query timeout in milliseconds (default: `30000`)          |
 | `RPC_FETCH_TIMEOUT_MS` | Soroban RPC fetch timeout in milliseconds (default: `15000`)       |
 | `REQUEST_TIMEOUT_MS`   | HTTP request timeout in milliseconds (default: `30000`)            |
+| `ENABLE_AUTH_MIDDLEWARE` | Enable authentication middleware (default: `false`)                |
+| `ENABLE_RATE_LIMITING`   | Enable rate limiting middleware (default: `true`)                  |
+| `EXPERIMENTAL_FEATURES`  | Enable experimental routes (e.g., pools) (default: `false`)        |
 | `REPLAY_START_LEDGER`  | Start ledger for event replay (omit for live streaming)            |
 | `REPLAY_END_LEDGER`    | End ledger for event replay (inclusive, requires `REPLAY_START_LEDGER`) |
 
@@ -481,7 +484,8 @@ See `.env.example` for the full list of environment variables.
 
 ## Rate Limiting
 
-All `/api/*` routes are protected by a rate limiter (express-rate-limit). The
+All `/api/*` routes are protected by a rate limiter (express-rate-limit) by default.
+Rate limiting can be disabled by setting `ENABLE_RATE_LIMITING=false`. The
 default window is 60 seconds with 100 requests per IP. Configurable via:
 
 | Variable               | Default | Description                          |
