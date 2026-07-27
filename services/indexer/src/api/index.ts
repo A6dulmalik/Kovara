@@ -322,17 +322,17 @@ export function createApp(db: Database, options: AppOptions = {}): express.Appli
       const offset = body.offset !== undefined ? Number(body.offset) : DEFAULT_OFFSET;
 
       if (!Number.isInteger(limit) || limit < 1) {
-        sendError(res, 400, "limit must be a positive integer", "INVALID_QUERY");
+        res.status(400).json({ error: "limit must be a positive integer", code: "INVALID_QUERY" });
         return;
       }
 
       if (limit > MAX_LIMIT) {
-        sendError(res, 400, `limit cannot exceed ${MAX_LIMIT}`, "LIMIT_EXCEEDED");
+        res.status(400).json({ error: `limit cannot exceed ${MAX_LIMIT}`, code: "LIMIT_EXCEEDED" });
         return;
       }
 
       if (!Number.isInteger(offset) || offset < 0) {
-        sendError(res, 400, "offset must be a non-negative integer", "INVALID_QUERY");
+        res.status(400).json({ error: "offset must be a non-negative integer", code: "INVALID_QUERY" });
         return;
       }
 
