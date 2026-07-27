@@ -13,9 +13,9 @@
     "generate:bindings": "stellar contract bindings typescript --wasm contracts/Kovara-contracts/target/wasm32v1-none/release/Kovara_contracts.wasm --output src/ --overwrite"
   },
   "dependencies": {
-    "@stellar/stellar-sdk": "^13.0.0"
+    "@stellar/stellar-sdk": "13.0.0"
   },
   "devDependencies": {
-    "typescript": "^5.8.3"
+    "typescript": "5.8.3"
   }
 }

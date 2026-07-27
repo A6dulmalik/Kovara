@@ -225,6 +225,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error("[indexer] Fatal error:", err);
+  logger.error("Fatal error:", err);
   process.exit(1);
 });
