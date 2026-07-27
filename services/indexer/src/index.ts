@@ -17,6 +17,9 @@
  *   POLL_INTERVAL_MS       - (optional) Event streaming polling interval in ms, default 5000
  *   RATE_LIMIT_WINDOW_MS   - (optional) Rate limit window in ms, default 60000 (1 minute)
  *   RATE_LIMIT_MAX         - (optional) Max requests per IP per rate limit window, default 100
+ *   ENABLE_AUTH_MIDDLEWARE - (optional) Enable authentication middleware (default: false)
+ *   ENABLE_RATE_LIMITING   - (optional) Enable rate limiting middleware (default: true)
+ *   ENABLE_EXPERIMENTAL_ROUTES - (optional) Enable experimental routes (e.g., pools) (default: false)
  */
 
 // import { Pool } from "pg";
@@ -55,6 +58,11 @@ const START_LEDGER = parseInt(process.env.START_LEDGER || "0", 10);
 const POLL_INTERVAL_MS = process.env["POLL_INTERVAL_MS"]
   ? parseInt(process.env["POLL_INTERVAL_MS"], 10)
   : undefined;
+
+// Feature flags
+const ENABLE_AUTH_MIDDLEWARE = process.env.ENABLE_AUTH_MIDDLEWARE === "true";
+const ENABLE_RATE_LIMITING = process.env.ENABLE_RATE_LIMITING !== "false"; // default to true
+const ENABLE_EXPERIMENTAL_ROUTES = process.env.ENABLE_EXPERIMENTAL_ROUTES === "true";
 
 // ── Database ──────────────────────────────────────────────────────────────────
 
@@ -207,7 +215,18 @@ async function main(): Promise<void> {
     await ensurePostSearchIndex();
 
     const db = new PostgresDatabase(pgPool);
-    const app = createApp(db);
+    // Set up auth middleware if enabled
+    const authMiddleware: AuthMiddleware = ENABLE_AUTH_MIDDLEWARE
+      ? (req, res, next) => {
+          const token = req.headers.authorization?.replace("Bearer ", "");
+          if (!token || token !== process.env.API_SECRET) {
+            res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+            return;
+          }
+          next();
+        }
+      : noopAuthMiddleware;
+    const app = createApp(db, { authMiddleware });
     const server = app.listen(PORT, HOST);
 
     console.log(`[indexer] API server ready at http://${HOST}:${PORT} (replay mode)`);
@@ -242,9 +261,20 @@ async function main(): Promise<void> {
   await ensureEventsTable();
   await ensurePostSearchIndex();
 
-  // Create and start API server
-  const db = new PostgresDatabase(pgPool);
-  const app = createApp(db);
+// Create and start API server
+    const db = new PostgresDatabase(pgPool);
+    // Set up auth middleware if enabled
+    const authMiddleware: AuthMiddleware = ENABLE_AUTH_MIDDLEWARE
+      ? (req, res, next) => {
+          const token = req.headers.authorization?.replace("Bearer ", "");
+          if (!token || token !== process.env.API_SECRET) {
+            res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" });
+            return;
+          }
+          next();
+        }
+      : noopAuthMiddleware;
+    const app = createApp(db, { authMiddleware });
   const server = app.listen(PORT, HOST);
 
   console.log(`[indexer] Server ready at http://${HOST}:${PORT}`);

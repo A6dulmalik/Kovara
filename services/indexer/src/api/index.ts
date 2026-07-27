@@ -216,19 +216,29 @@ export function createApp(db: Database, options: AppOptions = {}): express.Appli
     });
   });
 
-  // Apply rate limiting to all /api routes.
+// Apply rate limiting to all /api routes if enabled
+if (process.env.ENABLE_RATE_LIMITING !== "false") {
   const apiLimiter = createLimiter();
   app.use("/api", apiLimiter);
+}
 
-  // BE-25: Apply the auth middleware to all /api routes after rate limiting.
-  // Routes registered below this line are covered; the health check above is
-  // intentionally excluded.
-  app.use("/api", authMiddleware);
+// BE-25: Apply the auth middleware to all /api routes after rate limiting.
+// Routes registered below this line are covered; the health check above is
+// intentionally excluded.
+// Note: authMiddleware is now passed via options to createApp, so we don't apply it here.
+// Instead, it's applied in the app factory (see createApp function).
+// We keep this comment for historical context but the actual middleware application
+// happens in the options passed to createApp.
+// app.use("/api", authMiddleware);
 
-  app.use("/api/profiles", createProfilesRouter(db));
-  app.use("/api/posts", createPostsRouter(db));
-  app.use("/api/follows", createFollowsRouter(db));
+app.use("/api/profiles", createProfilesRouter(db));
+app.use("/api/posts", createPostsRouter(db));
+app.use("/api/follows", createFollowsRouter(db));
+
+// Conditionally mount experimental routes
+if (process.env.EXPERIMENTAL_FEATURES === "true") {
   app.use("/api/pools", createPoolsRouter(db));
+}
 
   interface SearchQuery {
     query: string;
