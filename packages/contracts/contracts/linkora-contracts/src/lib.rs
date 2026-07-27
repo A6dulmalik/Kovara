@@ -67,6 +67,7 @@ pub enum ContractError {
     CreatorTokenCannotBeContract = 40,
     ContentTooShort = 41,
     ContentTooLong = 42,
+    InvalidWasmHash = 43,
 }
 
 // ── Instance-storage key constants (small scalars, not contracttype) ──────────
@@ -1306,6 +1307,9 @@ impl KovaraContract {
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
         Self::bump_instance(&env);
         Self::require_admin(&env);
+        if new_wasm_hash.len() != 32 {
+            panic_with_error!(&env, ContractError::InvalidWasmHash);
+        }
         env.deployer()
             .update_current_contract_wasm(new_wasm_hash.clone());
         ContractUpgraded { new_wasm_hash }.publish(&env);
