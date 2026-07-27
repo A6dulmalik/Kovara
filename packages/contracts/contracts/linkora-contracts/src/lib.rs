@@ -358,19 +358,26 @@ pub struct KovaraContract;
 // ── Validation Helpers ────────────────────────────────────────────────────────
 
 fn validate_username(env: &Env, username: &String) {
-    let len = username.len();
-    if len < MIN_USERNAME_LEN {
-        panic_with_error!(env, ContractError::UsernameTooShort);
-    }
-    if len > MAX_USERNAME_LEN {
-        panic_with_error!(env, ContractError::UsernameTooLong);
-    }
     let bytes = username.to_bytes();
+    let mut has_non_space = false;
     for i in 0..bytes.len() {
         let c = bytes.get(i).unwrap() as char;
         if !c.is_ascii_alphanumeric() && c != '_' {
+            if c == ' ' || c == '\t' || c == '\n' || c == '\r' {
+                continue;
+            }
             panic_with_error!(env, ContractError::InvalidUsernameCharacter);
         }
+        has_non_space = true;
+    }
+    if !has_non_space || bytes.len() == 0 {
+        panic_with_error!(env, ContractError::InvalidUsername);
+    }
+    if bytes.len() < MIN_USERNAME_LEN {
+        panic_with_error!(env, ContractError::UsernameTooShort);
+    }
+    if bytes.len() > MAX_USERNAME_LEN {
+        panic_with_error!(env, ContractError::UsernameTooLong);
     }
 }
 
