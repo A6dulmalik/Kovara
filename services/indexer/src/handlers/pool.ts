@@ -49,6 +49,12 @@ export interface PoolAdminRemovedEvent {
   ledger: number;
 }
 
+function validatePoolId(poolId: string): void {
+  if (!poolId || typeof poolId !== "string" || poolId.trim() === "") {
+    throw new Error("Invalid pool ID: must be a non-empty string");
+  }
+}
+
 /**
  * Handle a PoolCreated event.
  *
@@ -57,9 +63,7 @@ export interface PoolAdminRemovedEvent {
  * (or equivalent) so duplicate events are silently ignored.
  */
 export async function handlePoolCreated(db: Database, event: PoolCreatedEvent): Promise<void> {
-  if (!event.pool_id) {
-    throw new Error("PoolCreated event missing required field: pool_id");
-  }
+  validatePoolId(event.pool_id);
   if (!event.token) {
     throw new Error("PoolCreated event missing required field: token");
   }
@@ -90,9 +94,7 @@ export async function handlePoolCreated(db: Database, event: PoolCreatedEvent): 
  * ensure events are not replayed (use the ledger watermark).
  */
 export async function handlePoolDeposit(db: Database, event: PoolDepositEvent): Promise<void> {
-  if (!event.pool_id) {
-    throw new Error("PoolDeposit event missing required field: pool_id");
-  }
+  validatePoolId(event.pool_id);
   if (event.amount <= BigInt(0)) {
     throw new Error("PoolDeposit event amount must be positive");
   }
@@ -106,9 +108,7 @@ export async function handlePoolDeposit(db: Database, event: PoolDepositEvent): 
  * Subtracts the withdrawn amount from the pool's running balance.
  */
 export async function handlePoolWithdraw(db: Database, event: PoolWithdrawEvent): Promise<void> {
-  if (!event.pool_id) {
-    throw new Error("PoolWithdraw event missing required field: pool_id");
-  }
+  validatePoolId(event.pool_id);
   if (event.amount <= BigInt(0)) {
     throw new Error("PoolWithdraw event amount must be positive");
   }
@@ -127,9 +127,7 @@ export async function handlePoolAdminAdded(
   db: Database,
   event: PoolAdminAddedEvent
 ): Promise<void> {
-  if (!event.pool_id) {
-    throw new Error("PoolAdminAdded event missing required field: pool_id");
-  }
+  validatePoolId(event.pool_id);
   if (!event.new_admin) {
     throw new Error("PoolAdminAdded event missing required field: new_admin");
   }

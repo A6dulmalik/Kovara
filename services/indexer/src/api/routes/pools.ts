@@ -15,10 +15,10 @@ export function createPoolsRouter(db: Database): Router {
     async (req: Request, res: Response<PoolResponse | ApiErrorResponse>): Promise<void> => {
       const { id } = req.params;
 
-      if (!id || typeof id !== "string" || id.trim() === "") {
-        res.status(400).json({ error: "id is required", code: "INVALID_ID" });
-        return;
-      }
+if (!id || typeof id !== "string" || id.trim() === "") {
+         res.status(400).json({ error: "Invalid pool ID: must be a non-empty string", code: "INVALID_ID" });
+         return;
+       }
 
       const pool = await db.getPool(id);
       if (!pool) {
