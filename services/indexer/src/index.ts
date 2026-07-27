@@ -197,8 +197,8 @@ async function main(): Promise<void> {
   console.log(`[indexer] API server listening on ${HOST}:${PORT}`);
   console.log("[indexer] Database and event streaming disabled for stub mode");
 
-  await ensureEventsTable();
   await runMigrations(pgPool);
+  await ensureEventsTable();
   await ensurePostSearchIndex();
 
   // Create and start API server

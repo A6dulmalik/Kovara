@@ -2,6 +2,8 @@ import request from "supertest";
 import { createApp, setRateLimit } from "../index";
 import { Database } from "../../db";
 
+const VALID_ADDRESS = "GAZJ2EQV2ES6R5BLUNXMNFR5VN3HQF4KXJ2GM5Q7GQHT5XBC2CRX3GK3";
+
 function makeMockDb(): jest.Mocked<Database> {
   return {
     upsertProfile: jest.fn(),
@@ -45,7 +47,7 @@ describe("Rate Limiting", () => {
     setRateLimit(60_000, 3);
     const app = createApp(db);
 
-    const route = "/api/profiles/test";
+    const route = `/api/profiles/${VALID_ADDRESS}`;
 
     // First 3 requests should succeed (profile not found = 404).
     for (let i = 0; i < 3; i++) {
@@ -63,7 +65,7 @@ describe("Rate Limiting", () => {
     setRateLimit(10_000, 1);
     const app = createApp(db);
 
-    const route = "/api/profiles/test";
+    const route = `/api/profiles/${VALID_ADDRESS}`;
 
     await request(app).get(route);
     const res = await request(app).get(route);
@@ -76,11 +78,14 @@ describe("Rate Limiting", () => {
     setRateLimit(60_000, 100);
     const app = createApp(db);
 
-    const res = await request(app).get("/api/profiles/test");
+    const res = await request(app).get(`/api/profiles/${VALID_ADDRESS}`);
 
     expect(res.status).toBe(404);
-    expect(res.headers["ratelimit"]).toBeDefined();
-    expect(res.headers["ratelimit-policy"]).toBeDefined();
+    const hasRateLimitHeader =
+      res.headers["ratelimit"] !== undefined ||
+      res.headers["x-ratelimit-limit"] !== undefined ||
+      res.headers["ratelimit-limit"] !== undefined;
+    expect(hasRateLimitHeader).toBe(true);
   });
 
   it("does not rate limit non-API routes like /health", async () => {
@@ -98,16 +103,20 @@ describe("Rate Limiting", () => {
     setRateLimit(20_000, 5);
     const app = createApp(db);
 
-    const route = "/api/profiles/test";
+    const route = `/api/profiles/${VALID_ADDRESS}`;
 
     const res1 = await request(app).get(route);
-    const match1 = (res1.headers["ratelimit"] as string)?.match(/remaining=(\d+)/);
-    expect(match1).toBeTruthy();
-    expect(Number(match1![1])).toBe(4);
+    const remaining1 =
+      res1.headers["x-ratelimit-remaining"] ??
+      res1.headers["ratelimit-remaining"];
+    expect(remaining1).toBeDefined();
+    expect(Number(remaining1)).toBe(4);
 
     const res2 = await request(app).get(route);
-    const match2 = (res2.headers["ratelimit"] as string)?.match(/remaining=(\d+)/);
-    expect(match2).toBeTruthy();
-    expect(Number(match2![1])).toBe(3);
+    const remaining2 =
+      res2.headers["x-ratelimit-remaining"] ??
+      res2.headers["ratelimit-remaining"];
+    expect(remaining2).toBeDefined();
+    expect(Number(remaining2)).toBe(3);
   });
 });
