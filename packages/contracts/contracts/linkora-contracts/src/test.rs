@@ -78,7 +78,7 @@ fn test_username_reverse_index_update() {
 }
 
 #[test]
-#[should_panic(expected = "username taken")]
+#[should_panic(expected = "Error(Contract, #5)")]
 fn test_username_duplicate_rejected() {
     let env = Env::default();
     env.mock_all_auths();
@@ -157,7 +157,7 @@ fn test_get_following_offset_beyond_end() {
 }
 
 #[test]
-#[should_panic(expected = "limit must be between 1 and 50")]
+#[should_panic(expected = "Error(Contract, #11)")]
 fn test_get_following_limit_exceeds_maximum() {
     let env = Env::default();
     env.mock_all_auths();
@@ -173,7 +173,7 @@ fn test_get_following_limit_exceeds_maximum() {
 }
 
 #[test]
-#[should_panic(expected = "limit must be between 1 and 50")]
+#[should_panic(expected = "Error(Contract, #11)")]
 fn test_get_following_zero_limit() {
     let env = Env::default();
     env.mock_all_auths();
@@ -284,7 +284,7 @@ fn test_get_posts_by_author_offset_beyond_end() {
 }
 
 #[test]
-#[should_panic(expected = "limit must be between 1 and 50")]
+#[should_panic(expected = "Error(Contract, #11)")]
 fn test_get_posts_by_author_limit_exceeds_maximum() {
     let env = Env::default();
     env.mock_all_auths();
@@ -372,7 +372,7 @@ fn test_tip_fee_split() {
 }
 
 #[test]
-#[should_panic(expected = "wrong token for tip")]
+#[should_panic(expected = "Error(Contract, #13)")]
 fn test_tip_rejects_mismatched_creator_token() {
     let env = Env::default();
     env.mock_all_auths();
@@ -421,7 +421,7 @@ fn test_tip_accepts_matching_creator_token() {
 }
 
 #[test]
-#[should_panic(expected = "blocked")]
+#[should_panic(expected = "Error(Contract, #7)")]
 fn test_tip_blocked_by_author() {
     let env = Env::default();
     env.mock_all_auths();
@@ -509,7 +509,7 @@ fn test_tip_non_blocked_user() {
 }
 
 #[test]
-#[should_panic(expected = "tip amount must be positive")]
+#[should_panic(expected = "Error(Contract, #12)")]
 fn test_tip_zero_amount_rejected() {
     let env = Env::default();
     env.mock_all_auths();
@@ -532,7 +532,7 @@ fn test_tip_zero_amount_rejected() {
 }
 
 #[test]
-#[should_panic(expected = "tip amount must be positive")]
+#[should_panic(expected = "Error(Contract, #12)")]
 fn test_tip_negative_amount_rejected() {
     let env = Env::default();
     env.mock_all_auths();
@@ -661,7 +661,7 @@ fn test_block_prevents_follow() {
 }
 
 #[test]
-#[should_panic(expected = "blocked")]
+#[should_panic(expected = "Error(Contract, #7)")]
 fn test_blocked_follow_panics() {
     let env = Env::default();
     env.mock_all_auths();
@@ -914,7 +914,7 @@ fn test_create_pool_emits_event() {
 }
 
 #[test]
-#[should_panic(expected = "insufficient signers")]
+#[should_panic(expected = "Error(Contract, #21)")]
 fn test_pool_withdraw_insufficient_signers() {
     let env = Env::default();
     env.mock_all_auths();
@@ -941,7 +941,7 @@ fn test_pool_withdraw_insufficient_signers() {
 }
 
 #[test]
-#[should_panic(expected = "unauthorized signer")]
+#[should_panic(expected = "Error(Contract, #22)")]
 fn test_pool_withdraw_unauthorized_signer() {
     let env = Env::default();
     env.mock_all_auths();
@@ -974,7 +974,7 @@ fn test_pool_withdraw_unauthorized_signer() {
 }
 
 #[test]
-#[should_panic(expected = "low balance")]
+#[should_panic(expected = "Error(Contract, #23)")]
 fn test_pool_withdraw_exceeds_balance() {
     let env = Env::default();
     env.mock_all_auths();
@@ -1006,7 +1006,7 @@ fn test_pool_withdraw_exceeds_balance() {
 }
 
 #[test]
-#[should_panic(expected = "must be positive")]
+#[should_panic(expected = "Error(Contract, #20)")]
 fn test_pool_withdraw_zero_amount_rejected() {
     let env = Env::default();
     env.mock_all_auths();
@@ -1037,7 +1037,7 @@ fn test_pool_withdraw_zero_amount_rejected() {
 }
 
 #[test]
-#[should_panic(expected = "must be positive")]
+#[should_panic(expected = "Error(Contract, #20)")]
 fn test_pool_withdraw_negative_amount_rejected() {
     let env = Env::default();
     env.mock_all_auths();
@@ -1068,7 +1068,7 @@ fn test_pool_withdraw_negative_amount_rejected() {
 }
 
 #[test]
-#[should_panic(expected = "insufficient signers")]
+#[should_panic(expected = "Error(Contract, #21)")]
 fn test_pool_withdraw_zero_signers_when_threshold_positive() {
     let env = Env::default();
     env.mock_all_auths();
@@ -1095,7 +1095,7 @@ fn test_pool_withdraw_zero_signers_when_threshold_positive() {
 }
 
 #[test]
-#[should_panic(expected = "insufficient signers")]
+#[should_panic(expected = "Error(Contract, #21)")]
 fn test_pool_withdraw_threshold_3_only_2_signers() {
     let env = Env::default();
     env.mock_all_auths();
@@ -1128,7 +1128,7 @@ fn test_pool_withdraw_threshold_3_only_2_signers() {
 }
 
 #[test]
-#[should_panic(expected = "insufficient signers")]
+#[should_panic(expected = "Error(Contract, #21)")]
 fn test_pool_withdraw_threshold_1_zero_signers() {
     let env = Env::default();
     env.mock_all_auths();
@@ -1154,7 +1154,7 @@ fn test_pool_withdraw_threshold_1_zero_signers() {
 }
 
 #[test]
-#[should_panic(expected = "insufficient signers")]
+#[should_panic(expected = "Error(Contract, #21)")]
 fn test_pool_withdraw_duplicate_signers_count_once() {
     let env = Env::default();
     env.mock_all_auths();
@@ -1218,7 +1218,7 @@ fn test_pool_withdraw_threshold_2_with_2_unique_signers_succeeds() {
 }
 
 #[test]
-#[should_panic(expected = "wrong token for pool")]
+#[should_panic(expected = "Error(Contract, #19)")]
 fn test_pool_deposit_wrong_token_rejected() {
     let env = Env::default();
     env.mock_all_auths();
@@ -1318,7 +1318,7 @@ fn test_sequential_posts() {
 }
 
 #[test]
-#[should_panic(expected = "post does not exist: 999")]
+#[should_panic(expected = "Error(Contract, #9)")]
 fn test_delete_post_non_existent() {
     let env = Env::default();
     env.mock_all_auths();
@@ -1373,7 +1373,7 @@ fn test_initialize_stores_admin() {
 }
 
 #[test]
-#[should_panic(expected = "already initialized")]
+#[should_panic(expected = "Error(Contract, #1)")]
 fn test_initialize_twice_panics() {
     let env = Env::default();
     env.mock_all_auths();
@@ -1442,7 +1442,7 @@ fn test_upgrade_by_different_address_panics() {
 // ── upgrade: initialization precondition ─────────────────────────────────────
 
 #[test]
-#[should_panic(expected = "not initialized")]
+#[should_panic(expected = "Error(Contract, #30)")]
 fn test_upgrade_before_initialize_panics() {
     // upgrade() calls require_admin() which reads the ADMIN instance-storage
     // key.  If initialize() has never been called that key is absent and the
@@ -1551,7 +1551,7 @@ fn test_upgrade_emits_contract_upgraded_event() {
 // ── upgrade: instance TTL is bumped before auth ───────────────────────────────
 
 #[test]
-#[should_panic(expected = "not initialized")]
+#[should_panic(expected = "Error(Contract, #30)")]
 fn test_upgrade_before_initialize_ttl_bump_does_not_mask_init_guard() {
     // upgrade() calls bump_instance() before require_admin().  Even though
     // bump_instance() extends TTL on instance storage, it must not create or
@@ -1585,7 +1585,7 @@ fn test_initialize_fee_boundary_max_valid() {
 }
 
 #[test]
-#[should_panic(expected = "invalid fee")]
+#[should_panic(expected = "Error(Contract, #2)")]
 fn test_initialize_fee_boundary_max_invalid() {
     let env = Env::default();
     env.mock_all_auths();
@@ -1716,7 +1716,7 @@ fn test_get_address_by_username_after_profile_deleted() {
 // ── Username validation tests (issue #195) ───────────────────────────────────────
 
 #[test]
-#[should_panic(expected = "username too short")]
+#[should_panic(expected = "Error(Contract, #37)")]
 fn test_username_too_short() {
     let env = Env::default();
     env.mock_all_auths();
@@ -1763,7 +1763,7 @@ fn test_username_max_length_valid() {
 }
 
 #[test]
-#[should_panic(expected = "username too long")]
+#[should_panic(expected = "Error(Contract, #38)")]
 fn test_username_too_long() {
     let env = Env::default();
     env.mock_all_auths();
@@ -1780,7 +1780,7 @@ fn test_username_too_long() {
 }
 
 #[test]
-#[should_panic(expected = "invalid username character")]
+#[should_panic(expected = "Error(Contract, #39)")]
 fn test_username_with_space() {
     let env = Env::default();
     env.mock_all_auths();
@@ -1794,7 +1794,7 @@ fn test_username_with_space() {
 }
 
 #[test]
-#[should_panic(expected = "invalid username character")]
+#[should_panic(expected = "Error(Contract, #39)")]
 fn test_username_with_special_char() {
     let env = Env::default();
     env.mock_all_auths();
@@ -1850,7 +1850,7 @@ fn test_unfollow_noop_no_event() {
 // ── Post content length validation tests (issue #194) ────────────────────────────
 
 #[test]
-#[should_panic(expected = "empty content")]
+#[should_panic(expected = "Error(Contract, #41)")]
 fn test_post_content_empty() {
     let env = Env::default();
     env.mock_all_auths();
@@ -1894,7 +1894,7 @@ fn test_post_content_max_length_valid() {
 }
 
 #[test]
-#[should_panic(expected = "content too long")]
+#[should_panic(expected = "Error(Contract, #42)")]
 fn test_post_content_too_long() {
     let env = Env::default();
     env.mock_all_auths();
@@ -1993,7 +1993,7 @@ fn test_get_following_limit_50_returns_at_most_50() {
 }
 
 #[test]
-#[should_panic(expected = "limit must be between 1 and 50")]
+#[should_panic(expected = "Error(Contract, #11)")]
 fn test_get_following_limit_51_panics() {
     // limit of 51 must panic with "limit must be between 1 and 50"
     let env = Env::default();
@@ -2123,7 +2123,7 @@ fn test_get_followers_last_page_truncates_to_remaining_items() {
 }
 
 #[test]
-#[should_panic(expected = "limit must be between 1 and 50")]
+#[should_panic(expected = "Error(Contract, #11)")]
 fn test_get_followers_limit_51_panics() {
     // limit of 51 must panic with "limit must be between 1 and 50"
     let env = Env::default();
@@ -2201,7 +2201,7 @@ fn test_create_post_content_280_chars_succeeds() {
 }
 
 #[test]
-#[should_panic(expected = "empty content")]
+#[should_panic(expected = "Error(Contract, #41)")]
 fn test_create_post_empty_content_panics() {
     // empty content must panic with a descriptive error
     let env = Env::default();
@@ -2213,7 +2213,7 @@ fn test_create_post_empty_content_panics() {
 }
 
 #[test]
-#[should_panic(expected = "content too long")]
+#[should_panic(expected = "Error(Contract, #42)")]
 fn test_create_post_content_281_chars_panics() {
     // content of 281 characters must panic with a descriptive error
     let env = Env::default();
@@ -2399,7 +2399,7 @@ fn test_pool_deposit_event_emitted() {
 }
 
 #[test]
-#[should_panic(expected = "insufficient signers")]
+#[should_panic(expected = "Error(Contract, #21)")]
 fn test_pool_withdraw_m_of_n_fewer_than_threshold_rejected() {
     // With a 3-of-5 threshold, providing only 2 signers must fail.
     let env = Env::default();
@@ -2413,7 +2413,7 @@ fn test_pool_withdraw_m_of_n_fewer_than_threshold_rejected() {
 }
 
 #[test]
-#[should_panic(expected = "unauthorized signer")]
+#[should_panic(expected = "Error(Contract, #22)")]
 fn test_pool_withdraw_m_of_n_non_admin_rejected() {
     // Even if the count meets the threshold, a non-admin signer causes rejection.
     let env = Env::default();
@@ -2428,7 +2428,7 @@ fn test_pool_withdraw_m_of_n_non_admin_rejected() {
 }
 
 #[test]
-#[should_panic(expected = "low balance")]
+#[should_panic(expected = "Error(Contract, #23)")]
 fn test_pool_withdraw_m_of_n_exceeds_balance_rejected() {
     let env = Env::default();
     env.mock_all_auths();
@@ -2612,7 +2612,7 @@ fn test_tip_fee_split_matches_fee_bps_config() {
 }
 
 #[test]
-#[should_panic(expected = "username taken")]
+#[should_panic(expected = "Error(Contract, #5)")]
 fn test_username_uniqueness_enforced() {
     let env = Env::default();
     env.mock_all_auths();
@@ -2808,7 +2808,7 @@ fn test_pool_threshold_updated_event() {
 }
 
 #[test]
-#[should_panic(expected = "threshold must be positive")]
+#[should_panic(expected = "Error(Contract, #27)")]
 fn test_update_pool_threshold_zero_panics() {
     let env = Env::default();
     env.mock_all_auths();
@@ -2835,7 +2835,7 @@ fn test_update_pool_threshold_zero_panics() {
 }
 
 #[test]
-#[should_panic(expected = "threshold cannot exceed admin count")]
+#[should_panic(expected = "Error(Contract, #28)")]
 fn test_update_pool_threshold_exceeds_admins_panics() {
     let env = Env::default();
     env.mock_all_auths();
@@ -2881,7 +2881,7 @@ fn test_delete_post_success() {
 }
 
 #[test]
-#[should_panic(expected = "only author can delete post")]
+#[should_panic(expected = "Error(Contract, #10)")]
 fn test_delete_post_non_author_panics() {
     let env = Env::default();
     env.mock_all_auths();
@@ -2954,7 +2954,7 @@ fn test_delete_post_emits_event() {
 }
 
 #[test]
-#[should_panic(expected = "only author can delete post")]
+#[should_panic(expected = "Error(Contract, #10)")]
 fn test_delete_post_unauthorized_no_event() {
     let env = Env::default();
     env.mock_all_auths();
@@ -3009,7 +3009,7 @@ fn test_instance_storage_ttl_extended_after_mutation() {
 // ── Issue #322: Tip cooldown tests ────────────────────────────────────────────
 
 #[test]
-#[should_panic(expected = "tip cooldown not expired")]
+#[should_panic(expected = "Error(Contract, #14)")]
 fn test_tip_cooldown_rejects_within_window() {
     let env = Env::default();
     env.mock_all_auths();
@@ -3158,7 +3158,7 @@ fn test_delete_profile_frees_username() {
 }
 
 #[test]
-#[should_panic(expected = "profile does not exist")]
+#[should_panic(expected = "Error(Contract, #6)")]
 fn test_delete_profile_non_existent_panics() {
     let env = Env::default();
     env.mock_all_auths();
@@ -3380,7 +3380,7 @@ fn test_tip_cooldown_enforcement() {
 }
 
 #[test]
-#[should_panic(expected = "deposit amount must be strictly greater than zero")]
+#[should_panic(expected = "Error(Contract, #17)")]
 fn test_pool_deposit_negative_rejected() {
     let env = Env::default();
     env.mock_all_auths();
@@ -3504,7 +3504,7 @@ fn test_get_posts_by_author_different_authors_isolated() {
 }
 
 #[test]
-#[should_panic(expected = "limit must be between 1 and 50")]
+#[should_panic(expected = "Error(Contract, #11)")]
 fn test_get_posts_by_author_zero_limit_panics() {
     let env = Env::default();
     env.mock_all_auths();

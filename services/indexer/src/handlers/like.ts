@@ -1,9 +1,5 @@
-/**
- * Like Event Handler
- * Handles LikePostEvent from the Kovara contract
- */
-
 import { Pool } from "pg";
+import { logger } from "../logger";
 
 export interface LikePostEvent {
   user: string;
@@ -16,12 +12,6 @@ export interface LikeEventContext {
   timestamp: Date;
 }
 
-/**
- * Handle LikePostEvent
- * 1. Inserts like record into likes table
- * 2. Increments like_count on the corresponding post
- * Idempotent: Uses (post_id, user_address) unique constraint and tx_hash
- */
 export async function handleLike(
   pool: Pool,
   event: LikePostEvent,
@@ -35,7 +25,6 @@ export async function handleLike(
   try {
     await client.query("BEGIN");
 
-    // Insert like record (idempotent via unique constraint on post_id + user_address)
     const insertLikeQuery = `
       INSERT INTO likes (post_id, user_address, created_at, tx_hash)
       VALUES ($1, $2, $3, $4)
@@ -48,12 +37,11 @@ export async function handleLike(
     const insertResult = await client.query(insertLikeQuery, insertValues);
 
     if (insertResult.rowCount === 0) {
-      console.log(`Like already exists for user ${user} on post ${post_id} (idempotent skip)`);
+      logger.info(`Like already exists for user ${user} on post ${post_id} (idempotent skip)`);
       await client.query("COMMIT");
       return;
     }
 
-    // Increment like_count on post
     const updatePostQuery = `
       UPDATE posts
       SET like_count = like_count + 1
@@ -64,24 +52,21 @@ export async function handleLike(
     const updateResult = await client.query(updatePostQuery, updateValues);
 
     if (updateResult.rowCount === 0) {
-      console.warn(`Post ${post_id} not found or deleted, like recorded but post not updated`);
+      logger.warn(`Post ${post_id} not found or deleted, like recorded but post not updated`);
     } else {
-      console.log(`Like from ${user} added to post ${post_id}`);
+      logger.always(`Like from ${user} added to post ${post_id}`);
     }
 
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
-    console.error(`Error handling LikePostEvent for post ${post_id}:`, error);
+    logger.error(`Error handling LikePostEvent for post ${post_id}:`, error);
     throw error;
   } finally {
     client.release();
   }
 }
 
-/**
- * Unit test helper: Mock event data
- */
 export function createMockLikeEvent(
   user: string = "GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
   post_id: bigint = 1n

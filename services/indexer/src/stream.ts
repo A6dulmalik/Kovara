@@ -8,6 +8,7 @@
  * BE-42: Also provides replay recovery utilities so operators can re-process
  * a range of ledgers or specific event types after an interruption.
  */
+import { logger } from "./logger";
 
 import { normalizeRawEvent } from "./normalize";
 import { withRetry } from "./retry";
@@ -247,7 +248,7 @@ export async function streamEvents(
 
       startLedger = latestLedger;
     } catch (err) {
-      console.error("[stream] Error fetching events:", err);
+      logger.error("Error fetching events:", err);
     }
 
     await new Promise<void>((resolve) => {
@@ -371,4 +372,6 @@ export async function replayEventTypes(
     handler,
     signal,
   );
+}
+  logger.always("Stopped.");
 }
