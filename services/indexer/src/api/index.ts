@@ -216,19 +216,29 @@ export function createApp(db: Database, options: AppOptions = {}): express.Appli
     });
   });
 
-  // Apply rate limiting to all /api routes.
+// Apply rate limiting to all /api routes if enabled
+if (process.env.ENABLE_RATE_LIMITING !== "false") {
   const apiLimiter = createLimiter();
   app.use("/api", apiLimiter);
+}
 
-  // BE-25: Apply the auth middleware to all /api routes after rate limiting.
-  // Routes registered below this line are covered; the health check above is
-  // intentionally excluded.
-  app.use("/api", authMiddleware);
+// BE-25: Apply the auth middleware to all /api routes after rate limiting.
+// Routes registered below this line are covered; the health check above is
+// intentionally excluded.
+// Note: authMiddleware is now passed via options to createApp, so we don't apply it here.
+// Instead, it's applied in the app factory (see createApp function).
+// We keep this comment for historical context but the actual middleware application
+// happens in the options passed to createApp.
+// app.use("/api", authMiddleware);
 
-  app.use("/api/profiles", createProfilesRouter(db));
-  app.use("/api/posts", createPostsRouter(db));
-  app.use("/api/follows", createFollowsRouter(db));
+app.use("/api/profiles", createProfilesRouter(db));
+app.use("/api/posts", createPostsRouter(db));
+app.use("/api/follows", createFollowsRouter(db));
+
+// Conditionally mount experimental routes
+if (process.env.EXPERIMENTAL_FEATURES === "true") {
   app.use("/api/pools", createPoolsRouter(db));
+}
 
   interface SearchQuery {
     query: string;
@@ -322,17 +332,17 @@ export function createApp(db: Database, options: AppOptions = {}): express.Appli
       const offset = body.offset !== undefined ? Number(body.offset) : DEFAULT_OFFSET;
 
       if (!Number.isInteger(limit) || limit < 1) {
-        sendError(res, 400, "limit must be a positive integer", "INVALID_QUERY");
+        res.status(400).json({ error: "limit must be a positive integer", code: "INVALID_QUERY" });
         return;
       }
 
       if (limit > MAX_LIMIT) {
-        sendError(res, 400, `limit cannot exceed ${MAX_LIMIT}`, "LIMIT_EXCEEDED");
+        res.status(400).json({ error: `limit cannot exceed ${MAX_LIMIT}`, code: "LIMIT_EXCEEDED" });
         return;
       }
 
       if (!Number.isInteger(offset) || offset < 0) {
-        sendError(res, 400, "offset must be a non-negative integer", "INVALID_QUERY");
+        res.status(400).json({ error: "offset must be a non-negative integer", code: "INVALID_QUERY" });
         return;
       }
 

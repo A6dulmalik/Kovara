@@ -69,6 +69,7 @@ pub enum ContractError {
     ContentTooLong = 42,
     TreasuryCannotBeContract = 43,
     NoOpFeeUpdate = 44,
+    InvalidWasmHash = 43,
 }
 
 // ── Instance-storage key constants (small scalars, not contracttype) ──────────
@@ -359,19 +360,26 @@ pub struct KovaraContract;
 // ── Validation Helpers ────────────────────────────────────────────────────────
 
 fn validate_username(env: &Env, username: &String) {
-    let len = username.len();
-    if len < MIN_USERNAME_LEN {
-        panic_with_error!(env, ContractError::UsernameTooShort);
-    }
-    if len > MAX_USERNAME_LEN {
-        panic_with_error!(env, ContractError::UsernameTooLong);
-    }
     let bytes = username.to_bytes();
+    let mut has_non_space = false;
     for i in 0..bytes.len() {
         let c = bytes.get(i).unwrap() as char;
         if !c.is_ascii_alphanumeric() && c != '_' {
+            if c == ' ' || c == '\t' || c == '\n' || c == '\r' {
+                continue;
+            }
             panic_with_error!(env, ContractError::InvalidUsernameCharacter);
         }
+        has_non_space = true;
+    }
+    if !has_non_space || bytes.len() == 0 {
+        panic_with_error!(env, ContractError::InvalidUsername);
+    }
+    if bytes.len() < MIN_USERNAME_LEN {
+        panic_with_error!(env, ContractError::UsernameTooShort);
+    }
+    if bytes.len() > MAX_USERNAME_LEN {
+        panic_with_error!(env, ContractError::UsernameTooLong);
     }
 }
 
@@ -440,6 +448,7 @@ impl KovaraContract {
     // ── Profiles ──────────────────────────────────────────────────────────────
 
     pub fn set_profile(env: Env, user: Address, username: String, creator_token: Address) {
+        Self::require_initialized(&env);
         Self::bump_instance(&env);
         user.require_auth();
         validate_username(&env, &username);
@@ -495,6 +504,7 @@ impl KovaraContract {
     }
 
     pub fn get_profile(env: Env, user: Address) -> Option<Profile> {
+        Self::require_initialized(&env);
         let key = StorageKey::Profile(user);
         let result: Option<Profile> = env.storage().persistent().get(&key);
         if result.is_some() {
@@ -514,6 +524,7 @@ impl KovaraContract {
     }
 
     pub fn delete_profile(env: Env, user: Address) {
+        Self::require_initialized(&env);
         Self::bump_instance(&env);
         user.require_auth();
         let key = StorageKey::Profile(user.clone());
@@ -532,6 +543,7 @@ impl KovaraContract {
     }
 
     pub fn get_address_by_username(env: Env, username: String) -> Option<Address> {
+        Self::require_initialized(&env);
         let key = StorageKey::UsernameIndex(username);
         let result: Option<Address> = env.storage().persistent().get(&key);
         if result.is_some() {
@@ -543,10 +555,14 @@ impl KovaraContract {
     // ── Social Graph ──────────────────────────────────────────────────────────
 
     pub fn follow(env: Env, follower: Address, followee: Address) {
+        Self::require_initialized(&env);
         Self::bump_instance(&env);
         follower.require_auth();
 
         if Self::is_blocked(env.clone(), followee.clone(), follower.clone()) {
+            panic_with_error!(&env, ContractError::Blocked);
+        }
+        if Self::is_blocked(env.clone(), follower.clone(), followee.clone()) {
             panic_with_error!(&env, ContractError::Blocked);
         }
 
@@ -581,6 +597,7 @@ impl KovaraContract {
     }
 
     pub fn unfollow(env: Env, follower: Address, followee: Address) {
+        Self::require_initialized(&env);
         Self::bump_instance(&env);
         follower.require_auth();
 
@@ -617,6 +634,7 @@ impl KovaraContract {
     }
 
     pub fn get_following(env: Env, user: Address, offset: u32, limit: u32) -> Vec<Address> {
+        Self::require_initialized(&env);
         if limit == 0 || limit > MAX_PAGINATION_LIMIT {
             panic_with_error!(&env, ContractError::InvalidPaginationLimit);
         }
@@ -633,6 +651,7 @@ impl KovaraContract {
     }
 
     pub fn get_followers(env: Env, user: Address, offset: u32, limit: u32) -> Vec<Address> {
+        Self::require_initialized(&env);
         if limit == 0 || limit > MAX_PAGE_LIMIT {
             panic_with_error!(&env, ContractError::InvalidPaginationLimit);
         }
@@ -651,6 +670,7 @@ impl KovaraContract {
     // ── Block List ────────────────────────────────────────────────────────────
 
     pub fn block_user(env: Env, blocker: Address, blocked: Address) {
+        Self::require_initialized(&env);
         Self::bump_instance(&env);
         blocker.require_auth();
         let key = StorageKey::Blocks(blocker.clone());
@@ -666,6 +686,7 @@ impl KovaraContract {
     }
 
     pub fn unblock_user(env: Env, blocker: Address, blocked: Address) {
+        Self::require_initialized(&env);
         Self::bump_instance(&env);
         blocker.require_auth();
         let key = StorageKey::Blocks(blocker.clone());
@@ -681,6 +702,7 @@ impl KovaraContract {
     }
 
     pub fn is_blocked(env: Env, blocker: Address, blocked: Address) -> bool {
+        Self::require_initialized(&env);
         let blocks: Map<Address, ()> = env
             .storage()
             .persistent()
@@ -692,6 +714,7 @@ impl KovaraContract {
     // ── Posts ─────────────────────────────────────────────────────────────────
 
     pub fn create_post(env: Env, author: Address, content: String) -> u64 {
+        Self::require_initialized(&env);
         Self::bump_instance(&env);
         author.require_auth();
         validate_content(&env, &content);
@@ -730,10 +753,12 @@ impl KovaraContract {
     /// Returns the total number of posts ever created, not the current active count.
     /// This counter is never decremented when posts are deleted.
     pub fn get_post_count(env: Env) -> u64 {
+        Self::require_initialized(&env);
         env.storage().instance().get(&POST_CT).unwrap_or(0u64)
     }
 
     pub fn get_post(env: Env, id: u64) -> Option<Post> {
+        Self::require_initialized(&env);
         let key = StorageKey::Post(id);
         let result: Option<Post> = env.storage().persistent().get(&key);
         if result.is_some() {
@@ -743,6 +768,7 @@ impl KovaraContract {
     }
 
     pub fn delete_post(env: Env, author: Address, post_id: u64) {
+        Self::require_initialized(&env);
         Self::bump_instance(&env);
         author.require_auth();
         let key = StorageKey::Post(post_id);
@@ -776,6 +802,7 @@ impl KovaraContract {
     }
 
     pub fn get_posts_by_author(env: Env, author: Address, offset: u32, limit: u32) -> Vec<u64> {
+        Self::require_initialized(&env);
         if limit == 0 || limit > MAX_PAGINATION_LIMIT {
             panic_with_error!(&env, ContractError::InvalidPaginationLimit);
         }
@@ -798,6 +825,7 @@ impl KovaraContract {
     // ── Reactions ─────────────────────────────────────────────────────────────
 
     pub fn like_post(env: Env, user: Address, post_id: u64) {
+        Self::require_initialized(&env);
         Self::bump_instance(&env);
         user.require_auth();
 
@@ -826,12 +854,14 @@ impl KovaraContract {
     }
 
     pub fn get_like_count(env: Env, post_id: u64) -> u64 {
+        Self::require_initialized(&env);
         let key = StorageKey::Post(post_id);
         let result: Option<Post> = env.storage().persistent().get(&key);
         result.map(|p| p.like_count).unwrap_or(0)
     }
 
     pub fn has_liked(env: Env, user: Address, post_id: u64) -> bool {
+        Self::require_initialized(&env);
         let key = StorageKey::Like(post_id, user);
         env.storage().persistent().has(&key)
     }
@@ -839,6 +869,7 @@ impl KovaraContract {
     // ── Tipping ───────────────────────────────────────────────────────────────
 
     pub fn tip(env: Env, tipper: Address, post_id: u64, token: Address, amount: i128) {
+        Self::require_initialized(&env);
         Self::bump_instance(&env);
         if amount <= 0 {
             panic_with_error!(&env, ContractError::TipAmountMustBePositive);
@@ -851,6 +882,9 @@ impl KovaraContract {
         });
 
         if Self::is_blocked(env.clone(), post.author.clone(), tipper.clone()) {
+            panic_with_error!(&env, ContractError::Blocked);
+        }
+        if Self::is_blocked(env.clone(), tipper.clone(), post.author.clone()) {
             panic_with_error!(&env, ContractError::Blocked);
         }
 
@@ -936,6 +970,7 @@ impl KovaraContract {
         initial_admins: Vec<Address>,
         threshold: u32,
     ) {
+        Self::require_initialized(&env);
         Self::bump_instance(&env);
         admin.require_auth();
         Self::require_admin(&env);
@@ -977,6 +1012,7 @@ impl KovaraContract {
         token: Address,
         amount: i128,
     ) {
+        Self::require_initialized(&env);
         Self::bump_instance(&env);
         if amount <= 0 {
             panic_with_error!(&env, ContractError::DepositAmountMustBePositive);
@@ -1021,6 +1057,7 @@ impl KovaraContract {
         amount: i128,
         recipient: Address,
     ) {
+        Self::require_initialized(&env);
         Self::bump_instance(&env);
         if amount <= 0 {
             panic_with_error!(&env, ContractError::MustBePositive);
@@ -1067,6 +1104,7 @@ impl KovaraContract {
     }
 
     pub fn get_pool(env: Env, pool_id: Symbol) -> Option<Pool> {
+        Self::require_initialized(&env);
         let key = StorageKey::Pool(pool_id);
         let result: Option<Pool> = env.storage().persistent().get(&key);
         if result.is_some() {
@@ -1076,6 +1114,7 @@ impl KovaraContract {
     }
 
     pub fn get_pool_admins(env: Env, pool_id: Symbol) -> Vec<Address> {
+        Self::require_initialized(&env);
         let key = StorageKey::Pool(pool_id);
         let pool: Pool = env
             .storage()
@@ -1089,6 +1128,7 @@ impl KovaraContract {
     }
 
     pub fn add_pool_admin(env: Env, signers: Vec<Address>, pool_id: Symbol, new_admin: Address) {
+        Self::require_initialized(&env);
         Self::bump_instance(&env);
         let key = StorageKey::Pool(pool_id.clone());
         let mut pool: Pool = env
@@ -1121,6 +1161,7 @@ impl KovaraContract {
     }
 
     pub fn remove_pool_admin(env: Env, signers: Vec<Address>, pool_id: Symbol, admin: Address) {
+        Self::require_initialized(&env);
         Self::bump_instance(&env);
         let key = StorageKey::Pool(pool_id.clone());
         let mut pool: Pool = env
@@ -1164,6 +1205,7 @@ impl KovaraContract {
     }
 
     pub fn update_pool_threshold(env: Env, signers: Vec<Address>, pool_id: Symbol, threshold: u32) {
+        Self::require_initialized(&env);
         Self::bump_instance(&env);
         if threshold == 0 {
             panic_with_error!(&env, ContractError::ThresholdMustBePositive);
@@ -1207,6 +1249,7 @@ impl KovaraContract {
     // ── Fee & Treasury ────────────────────────────────────────────────────────
 
     pub fn set_fee(env: Env, fee_bps: u32) {
+        Self::require_initialized(&env);
         Self::bump_instance(&env);
         Self::require_admin(&env);
         if fee_bps > 10_000 {
@@ -1226,6 +1269,7 @@ impl KovaraContract {
     }
 
     pub fn set_treasury(env: Env, treasury: Address) {
+        Self::require_initialized(&env);
         Self::bump_instance(&env);
         Self::require_admin(&env);
         if treasury == env.current_contract_address() {
@@ -1247,14 +1291,17 @@ impl KovaraContract {
     }
 
     pub fn get_fee_bps(env: Env) -> u32 {
+        Self::require_initialized(&env);
         env.storage().instance().get(&FEE_BPS).unwrap_or(0u32)
     }
 
     pub fn get_treasury(env: Env) -> Option<Address> {
+        Self::require_initialized(&env);
         env.storage().instance().get(&TREASURY)
     }
 
     pub fn set_tip_cooldown_window(env: Env, cooldown_ledgers: u32) {
+        Self::require_initialized(&env);
         Self::bump_instance(&env);
         Self::require_admin(&env);
         if cooldown_ledgers == 0 {
@@ -1266,6 +1313,7 @@ impl KovaraContract {
     }
 
     pub fn get_tip_cooldown_window(env: Env) -> u32 {
+        Self::require_initialized(&env);
         env.storage()
             .instance()
             .get(&TIP_COOLDOWN_WINDOW)
@@ -1277,12 +1325,26 @@ impl KovaraContract {
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
         Self::bump_instance(&env);
         Self::require_admin(&env);
+        if new_wasm_hash.len() != 32 {
+            panic_with_error!(&env, ContractError::InvalidWasmHash);
+        }
         env.deployer()
             .update_current_contract_wasm(new_wasm_hash.clone());
         ContractUpgraded { new_wasm_hash }.publish(&env);
     }
 
     // ── Internal Helpers ──────────────────────────────────────────────────────
+
+    fn require_initialized(env: &Env) {
+        if !env
+            .storage()
+            .instance()
+            .get::<Symbol, bool>(&INITIALIZED)
+            .unwrap_or(false)
+        {
+            panic_with_error!(env, ContractError::NotInitialized);
+        }
+    }
 
     fn require_admin(env: &Env) {
         let admin: Address = env
