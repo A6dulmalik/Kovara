@@ -1,3 +1,13 @@
+/**
+ * Soroban event streaming via Horizon/Soroban RPC.
+ *
+ * Polls getEvents on the configured RPC endpoint and yields raw contract
+ * events for the Kovara contract. Callers provide a cursor (latest processed
+ * ledger) so the stream can resume after a restart.
+ *
+ * BE-42: Also provides replay recovery utilities so operators can re-process
+ * a range of ledgers or specific event types after an interruption.
+ */
 import { logger } from "./logger";
 
 import { normalizeRawEvent } from "./normalize";
@@ -26,6 +36,11 @@ export interface StreamConfig {
    * bound memory usage.  Defaults to 10 000.
    */
   dedupCacheSize?: number;
+  /**
+   * BE-42: Optional event type filter. When set, only events whose topic[0]
+   * matches one of these strings are dispatched to the handler.
+   */
+  eventTypeFilter?: string[];
 }
 
 export type EventHandler = (event: RawEvent) => Promise<void>;
@@ -56,6 +71,8 @@ const MAX_EVENTS_PER_PAGE = 100;
  */
 const DEFAULT_DEDUP_CACHE_SIZE = 10_000;
 
+const RPC_FETCH_TIMEOUT_MS = parseInt(process.env["RPC_FETCH_TIMEOUT_MS"] ?? "", 10) || 15_000;
+
 async function fetchEvents(
   rpcUrl: string,
   contractId: string,
@@ -81,11 +98,20 @@ async function fetchEvents(
     },
   };
 
-  const response = await fetch(rpcUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), RPC_FETCH_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(rpcUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (!response.ok) {
     throw new Error(`RPC request failed: ${response.status} ${response.statusText}`);
@@ -190,6 +216,12 @@ export async function streamEvents(
 
         const normalizedEvent = normalizeRawEvent(event);
 
+        // BE-42: Skip events that do not match the configured event type filter.
+        if (config.eventTypeFilter && !config.eventTypeFilter.includes(normalizedEvent.type)) {
+          cursor = normalizedEvent.pagingToken;
+          continue;
+        }
+
         // BE-24: Skip already-processed events before hitting the handler or DB.
         if (seenEventIds.has(normalizedEvent.id)) {
           console.log(`[stream] Skipping duplicate event id=${normalizedEvent.id} tx=${normalizedEvent.txHash}`);
@@ -228,5 +260,118 @@ export async function streamEvents(
     });
   }
 
+  console.log("[stream] Stopped.");
+}
+
+// ---------------------------------------------------------------------------
+// BE-42: Replay recovery utilities
+// ---------------------------------------------------------------------------
+
+export interface ReplayConfig {
+  rpcUrl: string;
+  contractId: string;
+  startLedger: number;
+  endLedger: number;
+  eventTypeFilter?: string[];
+  batchSize?: number;
+}
+
+/**
+ * Replay a range of ledgers (inclusive) by polling the RPC endpoint for every
+ * ledger in [startLedger, endLedger].  Events that match the optional
+ * eventTypeFilter are passed to `handler`.  No in-memory deduplication is
+ * performed because the caller (or the handler's backing store) is expected to
+ * enforce idempotency (e.g. ON CONFLICT DO NOTHING).
+ *
+ * Returns the number of events dispatched.
+ */
+export async function replayLedgerRange(
+  config: ReplayConfig,
+  handler: EventHandler,
+  signal: AbortSignal,
+): Promise<number> {
+  const batchSize = config.batchSize ?? MAX_EVENTS_PER_PAGE;
+  let totalDispatched = 0;
+  let cursor: string | undefined;
+
+  console.log(
+    `[replay] Replaying ledgers ${config.startLedger}–${config.endLedger} ` +
+    `contract=${config.contractId} filter=${config.eventTypeFilter?.join(",") ?? "all"}`,
+  );
+
+  for (let ledger = config.startLedger; ledger <= config.endLedger && !signal.aborted; ledger++) {
+    let hasMore = true;
+    cursor = undefined;
+
+    while (hasMore && !signal.aborted) {
+      try {
+        const { events } = await withRetry(
+          () => fetchEvents(config.rpcUrl, config.contractId, ledger, cursor),
+          {
+            maxAttempts: 3,
+            baseDelayMs: 300,
+            backoffMultiplier: 2,
+            isRetryable: (err: unknown) => {
+              if (err instanceof Error) {
+                const msg = err.message.toLowerCase();
+                return msg.includes("timeout") || msg.includes("econnreset") || msg.includes("503");
+              }
+              return true;
+            },
+            operationLabel: "replayFetchEvents",
+          },
+        );
+
+        for (const event of events) {
+          if (signal.aborted) break;
+          if (!validateEventPayload(event)) continue;
+
+          const normalized = normalizeRawEvent(event);
+
+          if (config.eventTypeFilter && !config.eventTypeFilter.includes(normalized.type)) {
+            cursor = normalized.pagingToken;
+            continue;
+          }
+
+          try {
+            await handler(normalized);
+            totalDispatched++;
+          } catch (err) {
+            console.error(`[replay] Handler error for event ${normalized.id}:`, err);
+          }
+
+          cursor = normalized.pagingToken;
+        }
+
+        hasMore = events.length === batchSize;
+      } catch (err) {
+        console.error(`[replay] Error fetching ledger ${ledger}:`, err);
+        hasMore = false;
+      }
+    }
+  }
+
+  console.log(`[replay] Completed. Dispatched ${totalDispatched} events.`);
+  return totalDispatched;
+}
+
+/**
+ * Replay events for specific event types within a ledger range.
+ * Convenience wrapper around `replayLedgerRange`.
+ */
+export async function replayEventTypes(
+  config: ReplayConfig,
+  handler: EventHandler,
+  signal: AbortSignal,
+): Promise<number> {
+  return replayLedgerRange(
+    {
+      ...config,
+      eventTypeFilter: config.eventTypeFilter,
+    },
+    handler,
+    signal,
+  );
+}
   logger.always("Stopped.");
 }

@@ -8,6 +8,9 @@
 
 import { Pool } from "pg";
 
+/** Default query timeout in milliseconds (30s). */
+const DEFAULT_QUERY_TIMEOUT = 30_000;
+
 // ── Simple TTL cache for frequently-accessed records ────────────────────────
 
 class TTLCache<T> {
@@ -195,6 +198,10 @@ export class PostgresDatabase implements Database {
 
   constructor(private readonly pool: Pool) {}
 
+  private async runQuery(queryText: string, params?: unknown[]) {
+    return this.pool.query(queryText, params);
+  }
+
   private toBigInt(value: unknown): bigint {
     if (typeof value === "bigint") return value;
     if (typeof value === "number") return BigInt(value);
@@ -234,7 +241,7 @@ export class PostgresDatabase implements Database {
     // Invalidates any cached version of this profile so the next read
     // fetches fresh data (BE-18).
     this.profileCache.delete(profile.address);
-    await this.pool.query(
+    await this.runQuery(
       `
       INSERT INTO profiles (address, username, creator_token, updated_ledger)
       VALUES ($1, $2, $3, $4)
@@ -248,7 +255,7 @@ export class PostgresDatabase implements Database {
   }
 
   async getFollow(follower: string, followee: string): Promise<Follow | null> {
-    const result = await this.pool.query(
+    const result = await this.runQuery(
       `SELECT follower, followee, ledger FROM follows WHERE follower = $1 AND followee = $2`,
       [follower, followee]
     );
@@ -262,7 +269,7 @@ export class PostgresDatabase implements Database {
   }
 
   async insertFollow(follow: Follow): Promise<void> {
-    await this.pool.query(
+    await this.runQuery(
       `
       INSERT INTO follows (follower, followee, ledger)
       VALUES ($1, $2, $3)
@@ -273,7 +280,7 @@ export class PostgresDatabase implements Database {
   }
 
   async deleteFollow(follower: string, followee: string): Promise<void> {
-    await this.pool.query(`DELETE FROM follows WHERE follower = $1 AND followee = $2`, [
+    await this.runQuery(`DELETE FROM follows WHERE follower = $1 AND followee = $2`, [
       follower,
       followee,
     ]);
@@ -281,7 +288,7 @@ export class PostgresDatabase implements Database {
 
   async insertPost(post: Post): Promise<void> {
     this.postCache.delete(post.id.toString());
-    await this.pool.query(
+    await this.runQuery(
       `
       INSERT INTO posts (id, author, content, tip_total, like_count, created_at)
       VALUES ($1, $2, $3, $4, $5, COALESCE($6, NOW()))
@@ -299,7 +306,7 @@ export class PostgresDatabase implements Database {
 
   async markPostDeleted(post_id: bigint, deleted_ledger: number, deleted_at?: Date): Promise<void> {
     this.postCache.delete(post_id.toString());
-    await this.pool.query(
+    await this.runQuery(
       `
       UPDATE posts
       SET deleted_at = COALESCE($3, NOW()), deleted_ledger = $2
@@ -311,14 +318,14 @@ export class PostgresDatabase implements Database {
 
   async incrementPostLikeCount(post_id: bigint): Promise<void> {
     this.postCache.delete(post_id.toString());
-    await this.pool.query(`UPDATE posts SET like_count = like_count + 1 WHERE id = $1`, [
+    await this.runQuery(`UPDATE posts SET like_count = like_count + 1 WHERE id = $1`, [
       post_id.toString(),
     ]);
   }
 
   async addPostTipTotal(post_id: bigint, net_amount: bigint): Promise<void> {
     this.postCache.delete(post_id.toString());
-    await this.pool.query(`UPDATE posts SET tip_total = tip_total + $2 WHERE id = $1`, [
+    await this.runQuery(`UPDATE posts SET tip_total = tip_total + $2 WHERE id = $1`, [
       post_id.toString(),
       net_amount.toString(),
     ]);
@@ -330,7 +337,7 @@ export class PostgresDatabase implements Database {
     const cached = this.postCache.get(key);
     if (cached) return cached;
 
-    const result = await this.pool.query(`SELECT * FROM posts WHERE id = $1`, [key]);
+    const result = await this.runQuery(`SELECT * FROM posts WHERE id = $1`, [key]);
     const post = result.rowCount ? this.mapPost(result.rows[0]) : null;
 
     // Cache for subsequent reads.
@@ -339,7 +346,7 @@ export class PostgresDatabase implements Database {
   }
 
   async upsertLike(like: Like): Promise<boolean> {
-    const result = await this.pool.query(
+    const result = await this.runQuery(
       `
       INSERT INTO likes (post_id, user, ledger)
       VALUES ($1, $2, $3)
@@ -352,7 +359,7 @@ export class PostgresDatabase implements Database {
   }
 
   async insertTip(tip: Tip): Promise<void> {
-    await this.pool.query(
+    await this.runQuery(
       `
       INSERT INTO tips (tipper, post_id, amount, fee, ledger, tx_hash)
       VALUES ($1, $2, $3, $4, $5, $6)
@@ -370,7 +377,7 @@ export class PostgresDatabase implements Database {
   }
 
   async upsertPool(pool: PoolRecord): Promise<void> {
-    await this.pool.query(
+    await this.runQuery(
       `
       INSERT INTO pools (pool_id, token, balance, admins, threshold, created_ledger, updated_ledger)
       VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -394,7 +401,7 @@ export class PostgresDatabase implements Database {
   }
 
   async adjustPoolBalance(pool_id: string, delta: bigint, ledger: number): Promise<void> {
-    await this.pool.query(
+    await this.runQuery(
       `
       UPDATE pools
       SET balance = balance + $2, updated_ledger = $3
@@ -405,7 +412,7 @@ export class PostgresDatabase implements Database {
   }
 
   async insertPool(pool: PoolRecord): Promise<void> {
-    await this.pool.query(
+    await this.runQuery(
       `
       INSERT INTO pools (pool_id, token, balance, admins, threshold, created_ledger, updated_ledger)
       VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -424,7 +431,7 @@ export class PostgresDatabase implements Database {
   }
 
   async getPool(pool_id: string): Promise<PoolRecord | null> {
-    const result = await this.pool.query(`SELECT * FROM pools WHERE pool_id = $1`, [pool_id]);
+    const result = await this.runQuery(`SELECT * FROM pools WHERE pool_id = $1`, [pool_id]);
     return result.rowCount ? (result.rows[0] as PoolRecord) : null;
   }
 
@@ -433,8 +440,8 @@ export class PostgresDatabase implements Database {
     offset: number;
   }): Promise<{ pools: PoolRecord[]; total: number }> {
     const { limit, offset } = filters;
-    const countResult = await this.pool.query(`SELECT COUNT(*)::int AS total FROM pools`);
-    const result = await this.pool.query(
+    const countResult = await this.runQuery(`SELECT COUNT(*)::int AS total FROM pools`);
+    const result = await this.runQuery(
       `SELECT * FROM pools ORDER BY pool_id LIMIT $1 OFFSET $2`,
       [limit, offset]
     );
@@ -457,7 +464,7 @@ export class PostgresDatabase implements Database {
     token: string
   ): Promise<{ name: string; symbol: string; decimals: number } | null> {
     try {
-      const result = await this.pool.query(
+      const result = await this.runQuery(
         `SELECT name, symbol, decimals FROM token_metadata WHERE token_address = $1`,
         [token]
       );
@@ -474,7 +481,7 @@ export class PostgresDatabase implements Database {
   }
 
   async addPoolAdmin(pool_id: string, admin: string, ledger: number): Promise<void> {
-    await this.pool.query(
+    await this.runQuery(
       `
       UPDATE pools
       SET admins = array_append(admins, $2), updated_ledger = $3
@@ -485,7 +492,7 @@ export class PostgresDatabase implements Database {
   }
 
   async removePoolAdmin(pool_id: string, admin: string, ledger: number): Promise<void> {
-    await this.pool.query(
+    await this.runQuery(
       `
       UPDATE pools
       SET admins = array_remove(admins, $2), updated_ledger = $3
