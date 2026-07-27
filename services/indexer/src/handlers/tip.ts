@@ -78,7 +78,7 @@ export async function handleTip(
 
       // Check that the post exists before attempting update
       const postCheck = await client.query(
-        "SELECT id FROM posts WHERE id = $1 AND deleted_at IS NULL",
+        "SELECT id FROM posts WHERE id = $1 AND deleted_at IS NULL FOR UPDATE",
         [post_id.toString()]
       );
       if (postCheck.rowCount === 0) {
