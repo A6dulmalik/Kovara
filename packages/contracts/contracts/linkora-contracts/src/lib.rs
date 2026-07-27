@@ -67,6 +67,8 @@ pub enum ContractError {
     CreatorTokenCannotBeContract = 40,
     ContentTooShort = 41,
     ContentTooLong = 42,
+    TreasuryCannotBeContract = 43,
+    NoOpFeeUpdate = 44,
     InvalidWasmHash = 43,
 }
 
@@ -1254,6 +1256,9 @@ impl KovaraContract {
             panic_with_error!(&env, ContractError::InvalidFee);
         }
         let old_fee_bps = Self::get_fee_bps(env.clone());
+        if old_fee_bps == fee_bps {
+            panic_with_error!(&env, ContractError::NoOpFeeUpdate);
+        }
         env.storage().instance().set(&FEE_BPS, &fee_bps);
         FeeUpdatedEvent {
             name: symbol_short!("fee_upd"),
@@ -1267,9 +1272,15 @@ impl KovaraContract {
         Self::require_initialized(&env);
         Self::bump_instance(&env);
         Self::require_admin(&env);
+        if treasury == env.current_contract_address() {
+            panic_with_error!(&env, ContractError::TreasuryCannotBeContract);
+        }
         let old_treasury = Self::get_treasury(env.clone()).unwrap_or_else(|| {
             panic_with_error!(&env, ContractError::TreasuryNotSet);
         });
+        if old_treasury == treasury {
+            panic_with_error!(&env, ContractError::NoOpFeeUpdate);
+        }
         env.storage().instance().set(&TREASURY, &treasury);
         TreasuryUpdatedEvent {
             name: symbol_short!("treas_upd"),
