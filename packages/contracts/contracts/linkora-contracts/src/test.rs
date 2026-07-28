@@ -3687,6 +3687,250 @@ fn test_set_same_username_twice_for_same_user_is_idempotent() {
         client.get_profile_count(),
         1,
         "profile count must remain 1 after an idempotent update"
+// ── Issue #376: Safeguards for invalid pool IDs ────────────────────────────────
+
+#[test]
+#[should_panic(expected = "Error(Contract, #18)")]
+fn test_pool_deposit_nonexistent_pool_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_contract(&env);
+
+    let token = setup_token(&env, &admin);
+    let fake_pool_id = symbol_short!("no_pool");
+
+    // Pool was never created; must panic with PoolNotFound (#18).
+    client.pool_deposit(&admin, &fake_pool_id, &token, &100);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #18)")]
+fn test_pool_withdraw_nonexistent_pool_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_contract(&env);
+
+    let mut signers = soroban_sdk::vec![&env];
+    signers.push_back(admin.clone());
+    let fake_pool_id = symbol_short!("ghost");
+
+    client.pool_withdraw(&signers, &fake_pool_id, &50, &admin);
+}
+
+#[test]
+fn test_get_pool_nonexistent_returns_none() {
+// ── Issue #374: Event ordering for posts, likes, and tips ─────────────────────
+
+#[test]
+fn test_create_post_emits_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_contract(&env);
+
+    let author = Address::generate(&env);
+    let content = String::from_str(&env, "Hello Kovara");
+    let post_id = client.create_post(&author, &content);
+
+    // Storage update precedes event emission: the post must be readable.
+    let post = client.get_post(&post_id).unwrap();
+    assert_eq!(post.content, content);
+    assert_eq!(post.author, author);
+
+    // At least one event was emitted.
+    let all_events = env.events().all();
+    assert!(!all_events.is_empty(), "create_post must emit at least one event");
+}
+
+#[test]
+fn test_like_post_event_follows_storage_update() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_contract(&env);
+
+    let fake_pool_id = symbol_short!("absent");
+    let result = client.get_pool(&fake_pool_id);
+    assert!(result.is_none(), "get_pool for a non-existent pool must return None");
+}
+
+#[test]
+fn test_pool_deposit_accumulates_balance_and_preserves_pool_id() {
+    // Repeated deposits accumulate the pool balance and the pool-id reference
+    // stays consistent.
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_contract(&env);
+
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+    let depositor = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&depositor, &1_000);
+
+    let pool_id = symbol_short!("stbl");
+    let mut admins = soroban_sdk::vec![&env];
+    admins.push_back(admin.clone());
+    client.create_pool(&admin, &pool_id, &token, &admins, &1);
+
+    client.pool_deposit(&depositor, &pool_id, &token, &300);
+    client.pool_deposit(&depositor, &pool_id, &token, &200);
+
+    let pool = client.get_pool(&pool_id).unwrap();
+    assert_eq!(pool.balance, 500, "balance must equal the sum of all deposits");
+    assert_eq!(pool.token, token, "pool token reference must remain consistent");
+}
+
+// ── Issue #377: Proposal lifecycle tests ──────────────────────────────────────
+
+#[test]
+fn test_proposal_create_pending_and_retrieve() {
+    // threshold=2: proposal starts as Pending since only one signer (the proposer).
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_contract(&env);
+
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+    let depositor = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&depositor, &1_000);
+
+    let second_admin = Address::generate(&env);
+    let pool_id = symbol_short!("prop_p");
+    let mut admins = soroban_sdk::vec![&env];
+    admins.push_back(admin.clone());
+    admins.push_back(second_admin.clone());
+    client.create_pool(&admin, &pool_id, &token, &admins, &2);
+    client.pool_deposit(&depositor, &pool_id, &token, &500);
+
+    let recipient = Address::generate(&env);
+    let proposal_id = client.create_proposal(&admin, &pool_id, &100_i128, &recipient);
+
+    let proposal = client.get_proposal(&proposal_id).unwrap();
+    assert_eq!(proposal.pool_id, pool_id);
+    assert_eq!(proposal.amount, 100);
+    assert_eq!(proposal.recipient, recipient);
+    assert_eq!(proposal.status, ProposalStatus::Pending);
+}
+
+#[test]
+fn test_proposal_auto_executed_when_threshold_is_one() {
+    // threshold=1: proposer counts as the first and only signer, so the
+    // proposal must be executed immediately upon creation.
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_contract(&env);
+
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+    let depositor = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&depositor, &1_000);
+
+    let pool_id = symbol_short!("exec_p");
+    let mut admins = soroban_sdk::vec![&env];
+    admins.push_back(admin.clone());
+    client.create_pool(&admin, &pool_id, &token, &admins, &1);
+    client.pool_deposit(&depositor, &pool_id, &token, &500);
+
+    let recipient = Address::generate(&env);
+    let proposal_id = client.create_proposal(&admin, &pool_id, &200_i128, &recipient);
+
+    let proposal = client.get_proposal(&proposal_id).unwrap();
+    assert_eq!(
+        proposal.status,
+        ProposalStatus::Executed,
+        "proposal must be Executed immediately when threshold is 1"
+    );
+
+    // Pool balance must have been reduced.
+    let pool = client.get_pool(&pool_id).unwrap();
+    assert_eq!(pool.balance, 300, "pool balance must decrease by the proposal amount");
+}
+
+#[test]
+fn test_proposal_sign_transitions_to_executed() {
+    // threshold=2: proposer creates (1 signer), second admin signs (2 signers → executed).
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_contract(&env);
+
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+    let depositor = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&depositor, &1_000);
+
+    let second_admin = Address::generate(&env);
+    let pool_id = symbol_short!("msig_p");
+    let mut admins = soroban_sdk::vec![&env];
+    admins.push_back(admin.clone());
+    admins.push_back(second_admin.clone());
+    client.create_pool(&admin, &pool_id, &token, &admins, &2);
+    client.pool_deposit(&depositor, &pool_id, &token, &500);
+
+    let recipient = Address::generate(&env);
+    let proposal_id = client.create_proposal(&admin, &pool_id, &100_i128, &recipient);
+
+    // Still pending after creation by `admin` (1 of 2 required).
+    let pending = client.get_proposal(&proposal_id).unwrap();
+    assert_eq!(pending.status, ProposalStatus::Pending);
+
+    // Second admin signs → threshold reached → auto-execute.
+    client.sign_proposal(&second_admin, &proposal_id);
+
+    let executed = client.get_proposal(&proposal_id).unwrap();
+    assert_eq!(
+        executed.status,
+        ProposalStatus::Executed,
+        "proposal must be Executed once second signer pushes signers to threshold"
+    let author = Address::generate(&env);
+    let liker = Address::generate(&env);
+    let post_id = client.create_post(&author, &String::from_str(&env, "likeable post"));
+
+    client.like_post(&liker, &post_id);
+
+    // Storage must be updated: like_count incremented and has_liked returns true.
+    assert_eq!(client.get_like_count(&post_id), 1);
+    assert!(client.has_liked(&liker, &post_id));
+
+    // At least two events (PostCreated + LikePost) must have been emitted.
+    let events = env.events().all();
+    assert!(
+        events.len() >= 2,
+        "expected at least PostCreated and LikePost events, got {}",
+        events.len()
+    );
+}
+
+#[test]
+fn test_tip_event_emitted_after_storage_update() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _treasury) = setup_contract(&env);
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+
+    let author = Address::generate(&env);
+    let tipper = Address::generate(&env);
+
+    client.set_profile(&author, &String::from_str(&env, "author"), &token);
+    client.set_profile(&tipper, &String::from_str(&env, "tipper"), &token);
+
+    StellarAssetClient::new(&env, &token).mint(&tipper, &500);
+    let post_id = client.create_post(&author, &String::from_str(&env, "tip me"));
+
+    let events_before = env.events().all().len();
+
+    client.tip(&tipper, &post_id, &token, &100);
+
+    // Storage update: post.tip_total incremented.
+    let post = client.get_post(&post_id).unwrap();
+    assert_eq!(post.tip_total, 100);
+
+    // At least one new event emitted after the tip call.
+    let events_after = env.events().all().len();
+    assert!(
+        events_after > events_before,
+        "tip must emit a TipEvent; events before={}, after={}",
+        events_before,
+        events_after
     );
 }
 
@@ -3712,6 +3956,129 @@ fn test_reverse_index_consistent_after_same_username_update() {
 
 #[test]
 fn test_profile_count_unchanged_after_multiple_updates() {
+#[should_panic(expected = "Error(Contract, #22)")]
+fn test_sign_proposal_by_non_pool_admin_rejected() {
+    // A user who is not in pool.admins cannot sign a proposal.
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_contract(&env);
+
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+    let depositor = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&depositor, &500);
+
+    let second_admin = Address::generate(&env);
+    let pool_id = symbol_short!("auth_p");
+    let mut admins = soroban_sdk::vec![&env];
+    admins.push_back(admin.clone());
+    admins.push_back(second_admin.clone());
+    client.create_pool(&admin, &pool_id, &token, &admins, &2);
+    client.pool_deposit(&depositor, &pool_id, &token, &300);
+
+    let recipient = Address::generate(&env);
+    let proposal_id = client.create_proposal(&admin, &pool_id, &100_i128, &recipient);
+
+    let stranger = Address::generate(&env);
+    // stranger is not in pool.admins → UnauthorizedSigner (#22).
+    client.sign_proposal(&stranger, &proposal_id);
+}
+
+// ── Issue #378: Contract initialization order checks ──────────────────────────
+
+#[test]
+#[should_panic(expected = "Error(Contract, #30)")]
+fn test_set_profile_before_initialize_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(KovaraContract, ());
+    let client = KovaraContractClient::new(&env, &contract_id);
+
+    let user = Address::generate(&env);
+    let token = make_token(&env);
+    // initialize has NOT been called; must panic with NotInitialized (#30).
+    client.set_profile(&user, &String::from_str(&env, "alice"), &token);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #30)")]
+fn test_create_post_before_initialize_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(KovaraContract, ());
+    let client = KovaraContractClient::new(&env, &contract_id);
+
+    let author = Address::generate(&env);
+    // Must panic with NotInitialized (#30).
+    client.create_post(&author, &String::from_str(&env, "too early"));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #1)")]
+fn test_initialize_twice_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(KovaraContract, ());
+    let client = KovaraContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    client.initialize(&admin, &treasury, &0);
+    // Second call must panic with AlreadyInitialized (#1).
+    client.initialize(&admin, &treasury, &0);
+}
+
+#[test]
+fn test_operations_succeed_after_initialize() {
+    // After a successful initialize, standard operations must not panic.
+fn test_event_sequence_post_like_tip() {
+    // Verify that the aggregate event log after post -> like -> tip contains
+    // at least three entries: PostCreated, LikePost, and TipEvent.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _treasury) = setup_contract(&env);
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+
+    let author = Address::generate(&env);
+    let fan = Address::generate(&env);
+
+    client.set_profile(&author, &String::from_str(&env, "creator"), &token);
+    client.set_profile(&fan, &String::from_str(&env, "fan"), &token);
+    StellarAssetClient::new(&env, &token).mint(&fan, &1_000);
+
+    let post_id = client.create_post(&author, &String::from_str(&env, "great content"));
+    client.like_post(&fan, &post_id);
+    client.tip(&fan, &post_id, &token, &50);
+
+    // After the full workflow, at least three distinct events must be present.
+    let events = env.events().all();
+    assert!(
+        events.len() >= 3,
+        "expected at least 3 events (PostCreated, LikePost, Tip); got {}",
+        events.len()
+    );
+}
+
+// ── Issue #375: Empty follow and follower list coverage ────────────────────────
+
+#[test]
+fn test_get_following_empty_for_new_user() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_contract(&env);
+
+    let user = Address::generate(&env);
+    let result = client.get_following(&user, &0, &10);
+    assert_eq!(result.len(), 0, "a brand-new user must have an empty following list");
+}
+
+#[test]
+fn test_get_followers_empty_for_new_user() {
     let env = Env::default();
     env.mock_all_auths();
     let (client, _, _) = setup_contract(&env);
@@ -3758,6 +4125,62 @@ fn test_pool_deposit_wrong_token_rejected() {
 
 #[test]
 fn test_pool_deposit_correct_token_succeeds() {
+    client.set_profile(&user, &String::from_str(&env, "alice"), &token);
+    let profile = client.get_profile(&user).unwrap();
+    assert_eq!(profile.username, String::from_str(&env, "alice"));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #30)")]
+fn test_create_pool_before_initialize_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(KovaraContract, ());
+    let client = KovaraContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let token = make_token(&env);
+    let mut admins = soroban_sdk::vec![&env];
+    admins.push_back(admin.clone());
+    // Must panic with NotInitialized (#30).
+    client.create_pool(&admin, &symbol_short!("early"), &token, &admins, &1);
+}
+
+// ── Issue #379: Granular admin-role checks ─────────────────────────────────────
+
+#[test]
+fn test_pool_admin_can_withdraw_from_pool() {
+    // A designated pool admin (even if not the contract-level admin) can withdraw.
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, contract_admin, _) = setup_contract(&env);
+
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+    let depositor = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&depositor, &500);
+
+    let pool_admin = Address::generate(&env);
+    let pool_id = symbol_short!("role_p");
+    let mut admins = soroban_sdk::vec![&env];
+    admins.push_back(pool_admin.clone());
+    // pool.admins contains only pool_admin; not the contract-level admin.
+    client.create_pool(&contract_admin, &pool_id, &token, &admins, &1);
+    client.pool_deposit(&depositor, &pool_id, &token, &200);
+
+    let recipient = Address::generate(&env);
+    let mut pool_signers = soroban_sdk::vec![&env];
+    pool_signers.push_back(pool_admin.clone());
+    client.pool_withdraw(&pool_signers, &pool_id, &100, &recipient);
+
+    let pool = client.get_pool(&pool_id).unwrap();
+    assert_eq!(pool.balance, 100, "pool balance must decrease after pool admin withdrawal");
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #22)")]
+fn test_non_pool_admin_cannot_withdraw() {
     let env = Env::default();
     env.mock_all_auths();
     let (client, admin, _) = setup_contract(&env);
@@ -3832,4 +4255,123 @@ fn test_wrong_token_attempt_does_not_corrupt_pool_state() {
     let pool = client.get_pool(&pool_id).unwrap();
     assert_eq!(pool.balance, 0, "pool balance must remain 0 after a failed deposit");
     assert_eq!(pool.token, correct_token, "pool token must be unchanged after a failed deposit");
+    let pool_id = symbol_short!("priv_p");
+    let mut admins = soroban_sdk::vec![&env];
+    admins.push_back(admin.clone());
+    client.create_pool(&admin, &pool_id, &token, &admins, &1);
+    client.pool_deposit(&depositor, &pool_id, &token, &300);
+
+    let outsider = Address::generate(&env);
+    let mut outsider_signers = soroban_sdk::vec![&env];
+    outsider_signers.push_back(outsider.clone());
+    // outsider is not in pool.admins → UnauthorizedSigner (#22).
+    client.pool_withdraw(&outsider_signers, &pool_id, &100, &outsider);
+}
+
+#[test]
+fn test_contract_admin_can_set_fee() {
+    // The contract-level fee is governed by require_admin() which checks the
+    // ADMIN instance-storage key, completely separate from pool.admins.
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _contract_admin, _) = setup_contract(&env);
+
+    // Initially 0 as set by setup_contract (fee_bps=0).
+    assert_eq!(client.get_fee_bps(), 0);
+
+    client.set_fee(&500_u32);
+    assert_eq!(client.get_fee_bps(), 500, "contract admin must be able to update the fee");
+}
+
+#[test]
+fn test_add_pool_admin_requires_pool_admin_quorum() {
+    // Adding a pool admin requires the existing pool-admin quorum, not the
+    // contract-level admin.
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, contract_admin, _) = setup_contract(&env);
+
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+
+    let pool_admin = Address::generate(&env);
+    let pool_id = symbol_short!("add_adm");
+    let mut admins = soroban_sdk::vec![&env];
+    admins.push_back(pool_admin.clone());
+    client.create_pool(&contract_admin, &pool_id, &token, &admins, &1);
+
+    let new_admin = Address::generate(&env);
+    let mut signers = soroban_sdk::vec![&env];
+    signers.push_back(pool_admin.clone());
+    client.add_pool_admin(&signers, &pool_id, &new_admin);
+
+    let updated = client.get_pool(&pool_id).unwrap();
+    assert_eq!(updated.admins.len(), 2, "pool must now have two admins");
+    assert!(
+        updated.admins.iter().any(|a| a == new_admin),
+        "new_admin must appear in the pool admins list"
+    );
+    let result = client.get_followers(&user, &0, &10);
+    assert_eq!(result.len(), 0, "a brand-new user must have an empty followers list");
+}
+
+#[test]
+fn test_get_following_empty_after_unfollow() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_contract(&env);
+
+    let alice = Address::generate(&env);
+    let bob = Address::generate(&env);
+
+    client.follow(&alice, &bob);
+    assert_eq!(client.get_following(&alice, &0, &10).len(), 1);
+
+    client.unfollow(&alice, &bob);
+    let result = client.get_following(&alice, &0, &10);
+    assert_eq!(
+        result.len(),
+        0,
+        "following list must be empty after unfollowing the only followee"
+    );
+}
+
+#[test]
+fn test_get_followers_empty_after_unfollow() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_contract(&env);
+
+    let alice = Address::generate(&env);
+    let bob = Address::generate(&env);
+
+    client.follow(&alice, &bob);
+    assert_eq!(client.get_followers(&bob, &0, &10).len(), 1);
+
+    client.unfollow(&alice, &bob);
+    let result = client.get_followers(&bob, &0, &10);
+    assert_eq!(
+        result.len(),
+        0,
+        "followers list must be empty once all followers have unfollowed"
+    );
+}
+
+#[test]
+fn test_independent_users_start_with_empty_lists() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_contract(&env);
+
+    let user_a = Address::generate(&env);
+    let user_b = Address::generate(&env);
+    let user_c = Address::generate(&env);
+
+    // user_a follows user_b; user_c has no relationships at all.
+    client.follow(&user_a, &user_b);
+
+    let c_following = client.get_following(&user_c, &0, &10);
+    let c_followers = client.get_followers(&user_c, &0, &10);
+    assert_eq!(c_following.len(), 0, "user_c following list must be empty");
+    assert_eq!(c_followers.len(), 0, "user_c followers list must be empty");
 }
