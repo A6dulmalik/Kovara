@@ -165,6 +165,7 @@ pub struct ProfileSetEvent {
     #[topic]
     pub user: Address,
     pub username: String,
+    pub creator_token: Address,
 }
 
 #[contractevent]
@@ -500,7 +501,7 @@ impl KovaraContract {
         env.storage().persistent().set(&username_index_key, &user);
         Self::bump(&env, &key);
         Self::bump(&env, &username_index_key);
-        ProfileSetEvent { user, username }.publish(&env);
+        ProfileSetEvent { user, username, creator_token }.publish(&env);
     }
 
     pub fn get_profile(env: Env, user: Address) -> Option<Profile> {
