@@ -18,6 +18,7 @@ pub enum StorageKey {
     Blocks(Address),           // persistent: blocker -> Map<Address, ()>
     UsernameIndex(String), // persistent: username -> owner Address (reverse index for uniqueness)
     TipCooldown(u64, Address), // temporary: (post_id, tipper) -> last-tip ledger sequence number
+    Proposal(u64),              // persistent: proposal_id -> Proposal
 }
 
 // ── Error Codes ────────────────────────────────────────────────────────────────
@@ -81,6 +82,7 @@ const TREASURY: Symbol = symbol_short!("TREASURY");
 const FEE_BPS: Symbol = symbol_short!("FEE_BPS");
 const INITIALIZED: Symbol = symbol_short!("INIT");
 const TIP_COOLDOWN_WINDOW: Symbol = symbol_short!("TIP_CD_W");
+const PROPOSAL_CT: Symbol = symbol_short!("PROP_CT");
 
 // ── TTL Constants ─────────────────────────────────────────────────────────────
 //
@@ -1277,6 +1279,190 @@ impl KovaraContract {
             new_threshold: threshold,
         }
         .publish(&env);
+    }
+
+
+    // ── Proposals ─────────────────────────────────────────────────────────────
+
+    /// Create a withdrawal proposal for a pool. The `proposer` must be a pool
+    /// admin. They are automatically counted as the first signer. If the pool
+    /// threshold is 1 the proposal is executed immediately and `amount` tokens
+    /// are transferred to `recipient`.
+    pub fn create_proposal(
+        env: Env,
+        proposer: Address,
+        pool_id: Symbol,
+        amount: i128,
+        recipient: Address,
+    ) -> u64 {
+        Self::require_initialized(&env);
+        Self::bump_instance(&env);
+        proposer.require_auth();
+        if amount <= 0 {
+            panic_with_error!(&env, ContractError::MustBePositive);
+        }
+        let pool_key = StorageKey::Pool(pool_id.clone());
+        let mut pool: Pool = env
+            .storage()
+            .persistent()
+            .get(&pool_key)
+            .unwrap_or_else(|| {
+                panic_with_error!(&env, ContractError::PoolNotFound);
+            });
+        if !pool.admins.iter().any(|a| a == proposer) {
+            panic_with_error!(&env, ContractError::UnauthorizedSigner);
+        }
+        if pool.balance < amount {
+            panic_with_error!(&env, ContractError::LowBalance);
+        }
+
+        let proposal_id: u64 = env
+            .storage()
+            .instance()
+            .get(&PROPOSAL_CT)
+            .unwrap_or(0u64);
+        env.storage()
+            .instance()
+            .set(&PROPOSAL_CT, &(proposal_id + 1));
+
+        let mut signers = Vec::new(&env);
+        signers.push_back(proposer.clone());
+
+        let auto_execute = signers.len() >= pool.threshold;
+
+        let status = if auto_execute {
+            let token_addr = pool.token.clone();
+            pool.balance = pool.balance.checked_sub(amount).unwrap_or_else(|| {
+                panic_with_error!(&env, ContractError::PoolBalanceUnderflow);
+            });
+            env.storage().persistent().set(&pool_key, &pool);
+            Self::bump(&env, &pool_key);
+            token::Client::new(&env, &token_addr).transfer(
+                &env.current_contract_address(),
+                &recipient,
+                &amount,
+            );
+            ProposalExecutedEvent {
+                pool_id: pool_id.clone(),
+                proposal_id,
+                amount,
+                recipient: recipient.clone(),
+            }
+            .publish(&env);
+            ProposalStatus::Executed
+        } else {
+            ProposalStatus::Pending
+        };
+
+        let proposal = Proposal {
+            id: proposal_id,
+            pool_id: pool_id.clone(),
+            proposer: proposer.clone(),
+            amount,
+            recipient: recipient.clone(),
+            signers,
+            status,
+        };
+        let prop_key = StorageKey::Proposal(proposal_id);
+        env.storage().persistent().set(&prop_key, &proposal);
+        Self::bump(&env, &prop_key);
+
+        ProposalCreatedEvent {
+            pool_id,
+            proposal_id,
+            proposer,
+            amount,
+            recipient,
+        }
+        .publish(&env);
+
+        proposal_id
+    }
+
+    /// Sign an existing proposal. `signer` must be a pool admin for the
+    /// proposal's pool and must not have already signed. Once the number of
+    /// unique signers reaches the pool threshold the proposal is executed
+    /// automatically and funds are transferred to `recipient`.
+    pub fn sign_proposal(env: Env, signer: Address, proposal_id: u64) {
+        Self::require_initialized(&env);
+        Self::bump_instance(&env);
+        signer.require_auth();
+
+        let prop_key = StorageKey::Proposal(proposal_id);
+        let mut proposal: Proposal = env
+            .storage()
+            .persistent()
+            .get(&prop_key)
+            .unwrap_or_else(|| {
+                // Reuse PoolNotFound as the closest semantic error for a missing proposal.
+                panic_with_error!(&env, ContractError::PoolNotFound);
+            });
+
+        let pool_key = StorageKey::Pool(proposal.pool_id.clone());
+        let mut pool: Pool = env
+            .storage()
+            .persistent()
+            .get(&pool_key)
+            .unwrap_or_else(|| {
+                panic_with_error!(&env, ContractError::PoolNotFound);
+            });
+
+        if !pool.admins.iter().any(|a| a == signer) {
+            panic_with_error!(&env, ContractError::UnauthorizedSigner);
+        }
+        if proposal.signers.iter().any(|s| s == signer) {
+            // Already signed — idempotent, no-op.
+            return;
+        }
+
+        proposal.signers.push_back(signer.clone());
+
+        ProposalSignedEvent {
+            pool_id: proposal.pool_id.clone(),
+            proposal_id,
+            signer,
+        }
+        .publish(&env);
+
+        if proposal.signers.len() >= pool.threshold {
+            let token_addr = pool.token.clone();
+            pool.balance = pool
+                .balance
+                .checked_sub(proposal.amount)
+                .unwrap_or_else(|| {
+                    panic_with_error!(&env, ContractError::PoolBalanceUnderflow);
+                });
+            env.storage().persistent().set(&pool_key, &pool);
+            Self::bump(&env, &pool_key);
+            token::Client::new(&env, &token_addr).transfer(
+                &env.current_contract_address(),
+                &proposal.recipient,
+                &proposal.amount,
+            );
+            proposal.status = ProposalStatus::Executed;
+            ProposalExecutedEvent {
+                pool_id: proposal.pool_id.clone(),
+                proposal_id,
+                amount: proposal.amount,
+                recipient: proposal.recipient.clone(),
+            }
+            .publish(&env);
+        }
+
+        env.storage().persistent().set(&prop_key, &proposal);
+        Self::bump(&env, &prop_key);
+    }
+
+    /// Return the proposal with the given `proposal_id`, or `None` if it does
+    /// not exist.
+    pub fn get_proposal(env: Env, proposal_id: u64) -> Option<Proposal> {
+        Self::require_initialized(&env);
+        let key = StorageKey::Proposal(proposal_id);
+        let result: Option<Proposal> = env.storage().persistent().get(&key);
+        if result.is_some() {
+            Self::bump(&env, &key);
+        }
+        result
     }
 
     // ── Fee & Treasury ────────────────────────────────────────────────────────
