@@ -3591,3 +3591,382 @@ fn test_update_profile_preserves_address_and_updates_fields() {
     );
 
 }
+
+// ── Issue #376: Safeguards for invalid pool IDs ────────────────────────────────
+
+#[test]
+#[should_panic(expected = "Error(Contract, #18)")]
+fn test_pool_deposit_nonexistent_pool_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_contract(&env);
+
+    let token = setup_token(&env, &admin);
+    let fake_pool_id = symbol_short!("no_pool");
+
+    // Pool was never created; must panic with PoolNotFound (#18).
+    client.pool_deposit(&admin, &fake_pool_id, &token, &100);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #18)")]
+fn test_pool_withdraw_nonexistent_pool_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_contract(&env);
+
+    let mut signers = soroban_sdk::vec![&env];
+    signers.push_back(admin.clone());
+    let fake_pool_id = symbol_short!("ghost");
+
+    client.pool_withdraw(&signers, &fake_pool_id, &50, &admin);
+}
+
+#[test]
+fn test_get_pool_nonexistent_returns_none() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_contract(&env);
+
+    let fake_pool_id = symbol_short!("absent");
+    let result = client.get_pool(&fake_pool_id);
+    assert!(result.is_none(), "get_pool for a non-existent pool must return None");
+}
+
+#[test]
+fn test_pool_deposit_accumulates_balance_and_preserves_pool_id() {
+    // Repeated deposits accumulate the pool balance and the pool-id reference
+    // stays consistent.
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_contract(&env);
+
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+    let depositor = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&depositor, &1_000);
+
+    let pool_id = symbol_short!("stbl");
+    let mut admins = soroban_sdk::vec![&env];
+    admins.push_back(admin.clone());
+    client.create_pool(&admin, &pool_id, &token, &admins, &1);
+
+    client.pool_deposit(&depositor, &pool_id, &token, &300);
+    client.pool_deposit(&depositor, &pool_id, &token, &200);
+
+    let pool = client.get_pool(&pool_id).unwrap();
+    assert_eq!(pool.balance, 500, "balance must equal the sum of all deposits");
+    assert_eq!(pool.token, token, "pool token reference must remain consistent");
+}
+
+// ── Issue #377: Proposal lifecycle tests ──────────────────────────────────────
+
+#[test]
+fn test_proposal_create_pending_and_retrieve() {
+    // threshold=2: proposal starts as Pending since only one signer (the proposer).
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_contract(&env);
+
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+    let depositor = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&depositor, &1_000);
+
+    let second_admin = Address::generate(&env);
+    let pool_id = symbol_short!("prop_p");
+    let mut admins = soroban_sdk::vec![&env];
+    admins.push_back(admin.clone());
+    admins.push_back(second_admin.clone());
+    client.create_pool(&admin, &pool_id, &token, &admins, &2);
+    client.pool_deposit(&depositor, &pool_id, &token, &500);
+
+    let recipient = Address::generate(&env);
+    let proposal_id = client.create_proposal(&admin, &pool_id, &100_i128, &recipient);
+
+    let proposal = client.get_proposal(&proposal_id).unwrap();
+    assert_eq!(proposal.pool_id, pool_id);
+    assert_eq!(proposal.amount, 100);
+    assert_eq!(proposal.recipient, recipient);
+    assert_eq!(proposal.status, ProposalStatus::Pending);
+}
+
+#[test]
+fn test_proposal_auto_executed_when_threshold_is_one() {
+    // threshold=1: proposer counts as the first and only signer, so the
+    // proposal must be executed immediately upon creation.
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_contract(&env);
+
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+    let depositor = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&depositor, &1_000);
+
+    let pool_id = symbol_short!("exec_p");
+    let mut admins = soroban_sdk::vec![&env];
+    admins.push_back(admin.clone());
+    client.create_pool(&admin, &pool_id, &token, &admins, &1);
+    client.pool_deposit(&depositor, &pool_id, &token, &500);
+
+    let recipient = Address::generate(&env);
+    let proposal_id = client.create_proposal(&admin, &pool_id, &200_i128, &recipient);
+
+    let proposal = client.get_proposal(&proposal_id).unwrap();
+    assert_eq!(
+        proposal.status,
+        ProposalStatus::Executed,
+        "proposal must be Executed immediately when threshold is 1"
+    );
+
+    // Pool balance must have been reduced.
+    let pool = client.get_pool(&pool_id).unwrap();
+    assert_eq!(pool.balance, 300, "pool balance must decrease by the proposal amount");
+}
+
+#[test]
+fn test_proposal_sign_transitions_to_executed() {
+    // threshold=2: proposer creates (1 signer), second admin signs (2 signers → executed).
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_contract(&env);
+
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+    let depositor = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&depositor, &1_000);
+
+    let second_admin = Address::generate(&env);
+    let pool_id = symbol_short!("msig_p");
+    let mut admins = soroban_sdk::vec![&env];
+    admins.push_back(admin.clone());
+    admins.push_back(second_admin.clone());
+    client.create_pool(&admin, &pool_id, &token, &admins, &2);
+    client.pool_deposit(&depositor, &pool_id, &token, &500);
+
+    let recipient = Address::generate(&env);
+    let proposal_id = client.create_proposal(&admin, &pool_id, &100_i128, &recipient);
+
+    // Still pending after creation by `admin` (1 of 2 required).
+    let pending = client.get_proposal(&proposal_id).unwrap();
+    assert_eq!(pending.status, ProposalStatus::Pending);
+
+    // Second admin signs → threshold reached → auto-execute.
+    client.sign_proposal(&second_admin, &proposal_id);
+
+    let executed = client.get_proposal(&proposal_id).unwrap();
+    assert_eq!(
+        executed.status,
+        ProposalStatus::Executed,
+        "proposal must be Executed once second signer pushes signers to threshold"
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #22)")]
+fn test_sign_proposal_by_non_pool_admin_rejected() {
+    // A user who is not in pool.admins cannot sign a proposal.
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_contract(&env);
+
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+    let depositor = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&depositor, &500);
+
+    let second_admin = Address::generate(&env);
+    let pool_id = symbol_short!("auth_p");
+    let mut admins = soroban_sdk::vec![&env];
+    admins.push_back(admin.clone());
+    admins.push_back(second_admin.clone());
+    client.create_pool(&admin, &pool_id, &token, &admins, &2);
+    client.pool_deposit(&depositor, &pool_id, &token, &300);
+
+    let recipient = Address::generate(&env);
+    let proposal_id = client.create_proposal(&admin, &pool_id, &100_i128, &recipient);
+
+    let stranger = Address::generate(&env);
+    // stranger is not in pool.admins → UnauthorizedSigner (#22).
+    client.sign_proposal(&stranger, &proposal_id);
+}
+
+// ── Issue #378: Contract initialization order checks ──────────────────────────
+
+#[test]
+#[should_panic(expected = "Error(Contract, #30)")]
+fn test_set_profile_before_initialize_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(KovaraContract, ());
+    let client = KovaraContractClient::new(&env, &contract_id);
+
+    let user = Address::generate(&env);
+    let token = make_token(&env);
+    // initialize has NOT been called; must panic with NotInitialized (#30).
+    client.set_profile(&user, &String::from_str(&env, "alice"), &token);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #30)")]
+fn test_create_post_before_initialize_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(KovaraContract, ());
+    let client = KovaraContractClient::new(&env, &contract_id);
+
+    let author = Address::generate(&env);
+    // Must panic with NotInitialized (#30).
+    client.create_post(&author, &String::from_str(&env, "too early"));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #1)")]
+fn test_initialize_twice_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(KovaraContract, ());
+    let client = KovaraContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    client.initialize(&admin, &treasury, &0);
+    // Second call must panic with AlreadyInitialized (#1).
+    client.initialize(&admin, &treasury, &0);
+}
+
+#[test]
+fn test_operations_succeed_after_initialize() {
+    // After a successful initialize, standard operations must not panic.
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_contract(&env);
+
+    let user = Address::generate(&env);
+    let token = make_token(&env);
+    client.set_profile(&user, &String::from_str(&env, "alice"), &token);
+    let profile = client.get_profile(&user).unwrap();
+    assert_eq!(profile.username, String::from_str(&env, "alice"));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #30)")]
+fn test_create_pool_before_initialize_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(KovaraContract, ());
+    let client = KovaraContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let token = make_token(&env);
+    let mut admins = soroban_sdk::vec![&env];
+    admins.push_back(admin.clone());
+    // Must panic with NotInitialized (#30).
+    client.create_pool(&admin, &symbol_short!("early"), &token, &admins, &1);
+}
+
+// ── Issue #379: Granular admin-role checks ─────────────────────────────────────
+
+#[test]
+fn test_pool_admin_can_withdraw_from_pool() {
+    // A designated pool admin (even if not the contract-level admin) can withdraw.
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, contract_admin, _) = setup_contract(&env);
+
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+    let depositor = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&depositor, &500);
+
+    let pool_admin = Address::generate(&env);
+    let pool_id = symbol_short!("role_p");
+    let mut admins = soroban_sdk::vec![&env];
+    admins.push_back(pool_admin.clone());
+    // pool.admins contains only pool_admin; not the contract-level admin.
+    client.create_pool(&contract_admin, &pool_id, &token, &admins, &1);
+    client.pool_deposit(&depositor, &pool_id, &token, &200);
+
+    let recipient = Address::generate(&env);
+    let mut pool_signers = soroban_sdk::vec![&env];
+    pool_signers.push_back(pool_admin.clone());
+    client.pool_withdraw(&pool_signers, &pool_id, &100, &recipient);
+
+    let pool = client.get_pool(&pool_id).unwrap();
+    assert_eq!(pool.balance, 100, "pool balance must decrease after pool admin withdrawal");
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #22)")]
+fn test_non_pool_admin_cannot_withdraw() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_contract(&env);
+
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+    let depositor = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&depositor, &500);
+
+    let pool_id = symbol_short!("priv_p");
+    let mut admins = soroban_sdk::vec![&env];
+    admins.push_back(admin.clone());
+    client.create_pool(&admin, &pool_id, &token, &admins, &1);
+    client.pool_deposit(&depositor, &pool_id, &token, &300);
+
+    let outsider = Address::generate(&env);
+    let mut outsider_signers = soroban_sdk::vec![&env];
+    outsider_signers.push_back(outsider.clone());
+    // outsider is not in pool.admins → UnauthorizedSigner (#22).
+    client.pool_withdraw(&outsider_signers, &pool_id, &100, &outsider);
+}
+
+#[test]
+fn test_contract_admin_can_set_fee() {
+    // The contract-level fee is governed by require_admin() which checks the
+    // ADMIN instance-storage key, completely separate from pool.admins.
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _contract_admin, _) = setup_contract(&env);
+
+    // Initially 0 as set by setup_contract (fee_bps=0).
+    assert_eq!(client.get_fee_bps(), 0);
+
+    client.set_fee(&500_u32);
+    assert_eq!(client.get_fee_bps(), 500, "contract admin must be able to update the fee");
+}
+
+#[test]
+fn test_add_pool_admin_requires_pool_admin_quorum() {
+    // Adding a pool admin requires the existing pool-admin quorum, not the
+    // contract-level admin.
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, contract_admin, _) = setup_contract(&env);
+
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+
+    let pool_admin = Address::generate(&env);
+    let pool_id = symbol_short!("add_adm");
+    let mut admins = soroban_sdk::vec![&env];
+    admins.push_back(pool_admin.clone());
+    client.create_pool(&contract_admin, &pool_id, &token, &admins, &1);
+
+    let new_admin = Address::generate(&env);
+    let mut signers = soroban_sdk::vec![&env];
+    signers.push_back(pool_admin.clone());
+    client.add_pool_admin(&signers, &pool_id, &new_admin);
+
+    let updated = client.get_pool(&pool_id).unwrap();
+    assert_eq!(updated.admins.len(), 2, "pool must now have two admins");
+    assert!(
+        updated.admins.iter().any(|a| a == new_admin),
+        "new_admin must appear in the pool admins list"
+    );
+}
