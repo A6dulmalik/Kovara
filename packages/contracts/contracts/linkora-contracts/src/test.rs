@@ -3591,3 +3591,245 @@ fn test_update_profile_preserves_address_and_updates_fields() {
     );
 
 }
+
+// ── Issue #380: Test isolation ─────────────────────────────────────────────────
+
+#[test]
+fn test_each_env_starts_with_fresh_post_counter() {
+    // Two independent Env::default() instances must not share the post counter.
+    let env_a = Env::default();
+    env_a.mock_all_auths();
+    let (client_a, _, _) = setup_contract(&env_a);
+    let author_a = Address::generate(&env_a);
+    let first_id = client_a.create_post(&author_a, &String::from_str(&env_a, "first in env_a"));
+
+    let env_b = Env::default();
+    env_b.mock_all_auths();
+    let (client_b, _, _) = setup_contract(&env_b);
+    let author_b = Address::generate(&env_b);
+    let second_id = client_b.create_post(&author_b, &String::from_str(&env_b, "first in env_b"));
+
+    // Both environments start the counter at 0.
+    assert_eq!(first_id, 0, "env_a post counter must start at 0");
+    assert_eq!(second_id, 0, "env_b post counter must start at 0 independently");
+}
+
+#[test]
+fn test_each_env_starts_with_fresh_profile_state() {
+    // A profile created in env_a must not be visible in env_b.
+    let env_a = Env::default();
+    env_a.mock_all_auths();
+    let (client_a, _, _) = setup_contract(&env_a);
+    let token_a = make_token(&env_a);
+    let user_a = Address::generate(&env_a);
+    client_a.set_profile(&user_a, &String::from_str(&env_a, "alice"), &token_a);
+    assert_eq!(client_a.get_profile_count(), 1);
+
+    let env_b = Env::default();
+    env_b.mock_all_auths();
+    let (client_b, _, _) = setup_contract(&env_b);
+    assert_eq!(
+        client_b.get_profile_count(),
+        0,
+        "profile count must be 0 in a fresh test environment"
+    );
+}
+
+#[test]
+fn test_separate_contract_instances_share_no_storage() {
+    // Two contract instances registered in the same Env (different contract_ids)
+    // must not share any storage.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let id_a = env.register(KovaraContract, ());
+    let client_a = KovaraContractClient::new(&env, &id_a);
+    let admin_a = Address::generate(&env);
+    client_a.initialize(&admin_a, &Address::generate(&env), &0);
+
+    let id_b = env.register(KovaraContract, ());
+    let client_b = KovaraContractClient::new(&env, &id_b);
+    let admin_b = Address::generate(&env);
+    client_b.initialize(&admin_b, &Address::generate(&env), &0);
+
+    let token = make_token(&env);
+    let user = Address::generate(&env);
+    client_a.set_profile(&user, &String::from_str(&env, "alpha"), &token);
+
+    // Profile in instance A must NOT appear in instance B.
+    assert!(
+        client_b.get_profile(&user).is_none(),
+        "contract instances must not share persistent storage"
+    );
+}
+
+// ── Issue #381: Duplicate profile handling ─────────────────────────────────────
+
+#[test]
+fn test_set_same_username_twice_for_same_user_is_idempotent() {
+    // Calling set_profile with the same username twice for the same user must
+    // succeed without raising an error, and must not corrupt the reverse index.
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_contract(&env);
+
+    let user = Address::generate(&env);
+    let token = make_token(&env);
+    let username = String::from_str(&env, "same_name");
+
+    client.set_profile(&user, &username, &token);
+    client.set_profile(&user, &username, &token); // idempotent second call
+
+    let profile = client.get_profile(&user).unwrap();
+    assert_eq!(profile.username, username);
+    assert_eq!(profile.address, user);
+    assert_eq!(
+        client.get_profile_count(),
+        1,
+        "profile count must remain 1 after an idempotent update"
+    );
+}
+
+#[test]
+fn test_reverse_index_consistent_after_same_username_update() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_contract(&env);
+
+    let user = Address::generate(&env);
+    let token = make_token(&env);
+    let username = String::from_str(&env, "consistent");
+
+    client.set_profile(&user, &username, &token);
+    client.set_profile(&user, &username, &token);
+
+    assert_eq!(
+        client.get_address_by_username(&username),
+        Some(user),
+        "reverse-index must stay consistent after repeated set_profile with same username"
+    );
+}
+
+#[test]
+fn test_profile_count_unchanged_after_multiple_updates() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_contract(&env);
+
+    let user = Address::generate(&env);
+    let token = make_token(&env);
+
+    client.set_profile(&user, &String::from_str(&env, "v1"), &token);
+    client.set_profile(&user, &String::from_str(&env, "v2"), &token);
+    client.set_profile(&user, &String::from_str(&env, "v3"), &token);
+
+    assert_eq!(
+        client.get_profile_count(),
+        1,
+        "profile count must remain 1 regardless of how many times the same user updates"
+    );
+}
+
+// ── Issue #383: Token type safeguards ─────────────────────────────────────────
+
+#[test]
+#[should_panic(expected = "Error(Contract, #19)")]
+fn test_pool_deposit_wrong_token_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_contract(&env);
+
+    let correct_admin = Address::generate(&env);
+    let wrong_admin = Address::generate(&env);
+    let correct_token = setup_token(&env, &correct_admin);
+    let wrong_token = setup_token(&env, &wrong_admin);
+
+    let depositor = Address::generate(&env);
+    StellarAssetClient::new(&env, &wrong_token).mint(&depositor, &500);
+
+    let pool_id = symbol_short!("tkn_p");
+    let mut admins = soroban_sdk::vec![&env];
+    admins.push_back(admin.clone());
+    client.create_pool(&admin, &pool_id, &correct_token, &admins, &1);
+
+    // Depositing with wrong_token must fail with WrongTokenForPool (#19).
+    client.pool_deposit(&depositor, &pool_id, &wrong_token, &100);
+}
+
+#[test]
+fn test_pool_deposit_correct_token_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_contract(&env);
+
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+    let depositor = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&depositor, &500);
+
+    let pool_id = symbol_short!("ok_p");
+    let mut admins = soroban_sdk::vec![&env];
+    admins.push_back(admin.clone());
+    client.create_pool(&admin, &pool_id, &token, &admins, &1);
+
+    client.pool_deposit(&depositor, &pool_id, &token, &250);
+    let pool = client.get_pool(&pool_id).unwrap();
+    assert_eq!(pool.balance, 250, "correct token deposit must update pool balance");
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #13)")]
+fn test_tip_wrong_token_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_contract(&env);
+
+    let creator_admin = Address::generate(&env);
+    let other_admin = Address::generate(&env);
+    let creator_token = setup_token(&env, &creator_admin);
+    let other_token = setup_token(&env, &other_admin);
+
+    let author = Address::generate(&env);
+    let tipper = Address::generate(&env);
+    StellarAssetClient::new(&env, &other_token).mint(&tipper, &500);
+
+    // Author registered with creator_token.
+    client.set_profile(&author, &String::from_str(&env, "creator"), &creator_token);
+    client.set_profile(&tipper, &String::from_str(&env, "tipper"), &other_token);
+
+    let post_id = client.create_post(&author, &String::from_str(&env, "tip me"));
+
+    // Tipping with other_token must fail with WrongTokenForTip (#13).
+    client.tip(&tipper, &post_id, &other_token, &100);
+}
+
+#[test]
+fn test_wrong_token_attempt_does_not_corrupt_pool_state() {
+    // A failed deposit (wrong token) must leave the pool state unchanged.
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _) = setup_contract(&env);
+
+    let correct_admin = Address::generate(&env);
+    let wrong_admin = Address::generate(&env);
+    let correct_token = setup_token(&env, &correct_admin);
+    let wrong_token = setup_token(&env, &wrong_admin);
+
+    let depositor = Address::generate(&env);
+    StellarAssetClient::new(&env, &wrong_token).mint(&depositor, &500);
+    StellarAssetClient::new(&env, &correct_token).mint(&depositor, &500);
+
+    let pool_id = symbol_short!("safe_p");
+    let mut admins = soroban_sdk::vec![&env];
+    admins.push_back(admin.clone());
+    client.create_pool(&admin, &pool_id, &correct_token, &admins, &1);
+
+    // Attempt to deposit with wrong token — must revert.
+    let failed = client.try_pool_deposit(&depositor, &pool_id, &wrong_token, &100);
+    assert!(failed.is_err(), "wrong-token deposit must fail");
+
+    // Pool state is unchanged.
+    let pool = client.get_pool(&pool_id).unwrap();
+    assert_eq!(pool.balance, 0, "pool balance must remain 0 after a failed deposit");
+    assert_eq!(pool.token, correct_token, "pool token must be unchanged after a failed deposit");
+}
