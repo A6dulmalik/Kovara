@@ -423,6 +423,13 @@ where
 impl KovaraContract {
     // ── Initialization ────────────────────────────────────────────────────────
 
+    /// Initialize the contract. Must be called exactly once before any other
+    /// entry point. Sets the contract admin, treasury address, and initial tip
+    /// fee in basis points (`fee_bps` where 10 000 = 100%).
+    ///
+    /// # Panics
+    /// - `AlreadyInitialized` if the contract has already been initialized.
+    /// - `InvalidFee` if `fee_bps` exceeds 10 000.
     pub fn initialize(env: Env, admin: Address, treasury: Address, fee_bps: u32) {
         Self::bump_instance(&env);
         if env
@@ -447,6 +454,19 @@ impl KovaraContract {
 
     // ── Profiles ──────────────────────────────────────────────────────────────
 
+    /// Create or update the caller's on-chain profile. The `username` must be
+    /// 3–32 ASCII alphanumeric characters or underscores. `creator_token` is the
+    /// SEP-41 token accepted for tips to this user.
+    ///
+    /// On update the reverse-index (username → address) is kept consistent: the
+    /// old username is freed before the new one is claimed. The profile-creation
+    /// counter is only incremented on first-time registration, never on updates.
+    ///
+    /// # Panics
+    /// - `UsernameTaken` if `username` is already claimed by a different address.
+    /// - `InvalidUsername` / `UsernameTooShort` / `UsernameTooLong` / `InvalidUsernameCharacter`
+    ///   on malformed input.
+    /// - `CreatorTokenCannotBeContract` if `creator_token` is the contract itself.
     pub fn set_profile(env: Env, user: Address, username: String, creator_token: Address) {
         Self::require_initialized(&env);
         Self::bump_instance(&env);
@@ -554,6 +574,12 @@ impl KovaraContract {
 
     // ── Social Graph ──────────────────────────────────────────────────────────
 
+    /// Follow `followee` from `follower`. Idempotent — following an already-followed
+    /// address is a no-op. Updates both the `Following` and `Followers` lists and
+    /// emits a `FollowEvent`.
+    ///
+    /// # Panics
+    /// - `Blocked` if either party has blocked the other.
     pub fn follow(env: Env, follower: Address, followee: Address) {
         Self::require_initialized(&env);
         Self::bump_instance(&env);
@@ -713,6 +739,12 @@ impl KovaraContract {
 
     // ── Posts ─────────────────────────────────────────────────────────────────
 
+    /// Publish a new post. `content` must be 1–280 characters. Returns the new
+    /// post ID, which is a monotonically increasing counter stored in instance
+    /// storage. Emits a `PostCreatedEvent`.
+    ///
+    /// # Panics
+    /// - `ContentTooShort` / `ContentTooLong` if `content` is outside the allowed range.
     pub fn create_post(env: Env, author: Address, content: String) -> u64 {
         Self::require_initialized(&env);
         Self::bump_instance(&env);
@@ -824,6 +856,12 @@ impl KovaraContract {
 
     // ── Reactions ─────────────────────────────────────────────────────────────
 
+    /// Like a post. Idempotent — liking a post the user has already liked is a
+    /// no-op. Increments `Post.like_count` in persistent storage and records the
+    /// like under `StorageKey::Like(post_id, user)`.
+    ///
+    /// # Panics
+    /// - `PostDoesNotExist` if `post_id` is not found.
     pub fn like_post(env: Env, user: Address, post_id: u64) {
         Self::require_initialized(&env);
         Self::bump_instance(&env);
@@ -868,6 +906,18 @@ impl KovaraContract {
 
     // ── Tipping ───────────────────────────────────────────────────────────────
 
+    /// Tip the author of a post. Deducts the configured fee (in basis points) and
+    /// transfers the remainder directly to the post author. The tip cooldown
+    /// prevents a tipper from tipping the same post again within the configured
+    /// ledger window.
+    ///
+    /// # Panics
+    /// - `TipAmountMustBePositive` if `amount <= 0`.
+    /// - `PostNotFound` if `post_id` does not exist.
+    /// - `Blocked` if either the tipper or the author has blocked the other.
+    /// - `WrongTokenForTip` if `token` does not match the author's `creator_token`.
+    /// - `TipCooldownNotExpired` if a tip was made within the cooldown window.
+    /// - `TreasuryNotSet` if the treasury address has not been configured.
     pub fn tip(env: Env, tipper: Address, post_id: u64, token: Address, amount: i128) {
         Self::require_initialized(&env);
         Self::bump_instance(&env);
@@ -961,7 +1011,13 @@ impl KovaraContract {
 
     // ── Community Pool ────────────────────────────────────────────────────────
 
-    /// Create a named pool with an admin set and M-of-N withdrawal threshold.
+    /// Create a named community pool identified by `pool_id`. The pool holds a
+    /// single `token` type and is governed by `initial_admins` with an M-of-N
+    /// `threshold` required for withdrawals, admin changes, and threshold updates.
+    ///
+    /// # Panics
+    /// - `PoolAlreadyExists` if a pool with `pool_id` already exists.
+    /// - `InvalidThreshold` if `threshold` is 0 or exceeds the number of initial admins.
     pub fn create_pool(
         env: Env,
         admin: Address,
@@ -1248,6 +1304,12 @@ impl KovaraContract {
 
     // ── Fee & Treasury ────────────────────────────────────────────────────────
 
+    /// Update the protocol tip fee. Only callable by the contract admin.
+    /// `fee_bps` is expressed in basis points (10 000 = 100%).
+    ///
+    /// # Panics
+    /// - `InvalidFee` if `fee_bps > 10_000`.
+    /// - `NoOpFeeUpdate` if the new value is identical to the current value.
     pub fn set_fee(env: Env, fee_bps: u32) {
         Self::require_initialized(&env);
         Self::bump_instance(&env);
@@ -1268,6 +1330,12 @@ impl KovaraContract {
         .publish(&env);
     }
 
+    /// Update the treasury address that receives the protocol fee on each tip.
+    /// Only callable by the contract admin.
+    ///
+    /// # Panics
+    /// - `TreasuryCannotBeContract` if `treasury` is the contract address itself.
+    /// - `NoOpFeeUpdate` if the new address is identical to the current treasury.
     pub fn set_treasury(env: Env, treasury: Address) {
         Self::require_initialized(&env);
         Self::bump_instance(&env);
@@ -1322,6 +1390,11 @@ impl KovaraContract {
 
     // ── Upgradability ─────────────────────────────────────────────────────────
 
+    /// Upgrade the contract WASM. Only callable by the contract admin.
+    /// Emits a `ContractUpgraded` event.
+    ///
+    /// # Panics
+    /// - `InvalidWasmHash` if the hash is not exactly 32 bytes.
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
         Self::bump_instance(&env);
         Self::require_admin(&env);
