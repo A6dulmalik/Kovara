@@ -167,6 +167,7 @@ pub struct ProfileSetEvent {
     #[topic]
     pub user: Address,
     pub username: String,
+    pub creator_token: Address,
 }
 
 #[contractevent]
@@ -502,7 +503,7 @@ impl KovaraContract {
         env.storage().persistent().set(&username_index_key, &user);
         Self::bump(&env, &key);
         Self::bump(&env, &username_index_key);
-        ProfileSetEvent { user, username }.publish(&env);
+        ProfileSetEvent { user, username, creator_token }.publish(&env);
     }
 
     pub fn get_profile(env: Env, user: Address) -> Option<Profile> {
@@ -1073,10 +1074,18 @@ impl KovaraContract {
                 panic_with_error!(&env, ContractError::PoolNotFound);
             });
 
-        if signers.len() < pool.threshold {
+        // Deduplicate signers to count only unique valid signers
+        let mut unique_signers = Vec::new(&env);
+        for signer in signers.iter() {
+            if !unique_signers.iter().any(|x| x == signer) {
+                unique_signers.push_back(signer.clone());
+            }
+        }
+        
+        if unique_signers.len() < pool.threshold {
             panic_with_error!(&env, ContractError::InsufficientSigners);
         }
-        for signer in signers.iter() {
+        for signer in unique_signers.iter() {
             if !pool.admins.iter().any(|x| x == signer) {
                 panic_with_error!(&env, ContractError::UnauthorizedSigner);
             }
@@ -1141,10 +1150,18 @@ impl KovaraContract {
                 panic_with_error!(&env, ContractError::PoolNotFound);
             });
 
-        if signers.len() < pool.threshold {
+        // Deduplicate signers to count only unique valid signers
+        let mut unique_signers = Vec::new(&env);
+        for signer in signers.iter() {
+            if !unique_signers.iter().any(|x| x == signer) {
+                unique_signers.push_back(signer.clone());
+            }
+        }
+        
+        if unique_signers.len() < pool.threshold {
             panic_with_error!(&env, ContractError::InsufficientSigners);
         }
-        for signer in signers.iter() {
+        for signer in unique_signers.iter() {
             if !pool.admins.iter().any(|x| x == signer) {
                 panic_with_error!(&env, ContractError::UnauthorizedSigner);
             }
@@ -1174,10 +1191,18 @@ impl KovaraContract {
                 panic_with_error!(&env, ContractError::PoolNotFound);
             });
 
-        if signers.len() < pool.threshold {
+        // Deduplicate signers to count only unique valid signers
+        let mut unique_signers = Vec::new(&env);
+        for signer in signers.iter() {
+            if !unique_signers.iter().any(|x| x == signer) {
+                unique_signers.push_back(signer.clone());
+            }
+        }
+        
+        if unique_signers.len() < pool.threshold {
             panic_with_error!(&env, ContractError::InsufficientSigners);
         }
-        for signer in signers.iter() {
+        for signer in unique_signers.iter() {
             if !pool.admins.iter().any(|x| x == signer) {
                 panic_with_error!(&env, ContractError::UnauthorizedSigner);
             }
@@ -1221,10 +1246,18 @@ impl KovaraContract {
                 panic_with_error!(&env, ContractError::PoolNotFound);
             });
 
-        if signers.len() < pool.threshold {
+        // Deduplicate signers to count only unique valid signers
+        let mut unique_signers = Vec::new(&env);
+        for signer in signers.iter() {
+            if !unique_signers.iter().any(|x| x == signer) {
+                unique_signers.push_back(signer.clone());
+            }
+        }
+        
+        if unique_signers.len() < pool.threshold {
             panic_with_error!(&env, ContractError::InsufficientSigners);
         }
-        for signer in signers.iter() {
+        for signer in unique_signers.iter() {
             if !pool.admins.iter().any(|x| x == signer) {
                 panic_with_error!(&env, ContractError::UnauthorizedSigner);
             }

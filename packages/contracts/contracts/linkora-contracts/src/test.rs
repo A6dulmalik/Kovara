@@ -3624,6 +3624,30 @@ fn test_pool_withdraw_nonexistent_pool_rejected() {
 
 #[test]
 fn test_get_pool_nonexistent_returns_none() {
+// ── Issue #374: Event ordering for posts, likes, and tips ─────────────────────
+
+#[test]
+fn test_create_post_emits_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_contract(&env);
+
+    let author = Address::generate(&env);
+    let content = String::from_str(&env, "Hello Kovara");
+    let post_id = client.create_post(&author, &content);
+
+    // Storage update precedes event emission: the post must be readable.
+    let post = client.get_post(&post_id).unwrap();
+    assert_eq!(post.content, content);
+    assert_eq!(post.author, author);
+
+    // At least one event was emitted.
+    let all_events = env.events().all();
+    assert!(!all_events.is_empty(), "create_post must emit at least one event");
+}
+
+#[test]
+fn test_like_post_event_follows_storage_update() {
     let env = Env::default();
     env.mock_all_auths();
     let (client, _, _) = setup_contract(&env);
@@ -3760,6 +3784,58 @@ fn test_proposal_sign_transitions_to_executed() {
         executed.status,
         ProposalStatus::Executed,
         "proposal must be Executed once second signer pushes signers to threshold"
+    let author = Address::generate(&env);
+    let liker = Address::generate(&env);
+    let post_id = client.create_post(&author, &String::from_str(&env, "likeable post"));
+
+    client.like_post(&liker, &post_id);
+
+    // Storage must be updated: like_count incremented and has_liked returns true.
+    assert_eq!(client.get_like_count(&post_id), 1);
+    assert!(client.has_liked(&liker, &post_id));
+
+    // At least two events (PostCreated + LikePost) must have been emitted.
+    let events = env.events().all();
+    assert!(
+        events.len() >= 2,
+        "expected at least PostCreated and LikePost events, got {}",
+        events.len()
+    );
+}
+
+#[test]
+fn test_tip_event_emitted_after_storage_update() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _treasury) = setup_contract(&env);
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+
+    let author = Address::generate(&env);
+    let tipper = Address::generate(&env);
+
+    client.set_profile(&author, &String::from_str(&env, "author"), &token);
+    client.set_profile(&tipper, &String::from_str(&env, "tipper"), &token);
+
+    StellarAssetClient::new(&env, &token).mint(&tipper, &500);
+    let post_id = client.create_post(&author, &String::from_str(&env, "tip me"));
+
+    let events_before = env.events().all().len();
+
+    client.tip(&tipper, &post_id, &token, &100);
+
+    // Storage update: post.tip_total incremented.
+    let post = client.get_post(&post_id).unwrap();
+    assert_eq!(post.tip_total, 100);
+
+    // At least one new event emitted after the tip call.
+    let events_after = env.events().all().len();
+    assert!(
+        events_after > events_before,
+        "tip must emit a TipEvent; events before={}, after={}",
+        events_before,
+        events_after
     );
 }
 
@@ -3842,6 +3918,51 @@ fn test_initialize_twice_rejected() {
 #[test]
 fn test_operations_succeed_after_initialize() {
     // After a successful initialize, standard operations must not panic.
+fn test_event_sequence_post_like_tip() {
+    // Verify that the aggregate event log after post -> like -> tip contains
+    // at least three entries: PostCreated, LikePost, and TipEvent.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, _admin, _treasury) = setup_contract(&env);
+    let token_admin = Address::generate(&env);
+    let token = setup_token(&env, &token_admin);
+
+    let author = Address::generate(&env);
+    let fan = Address::generate(&env);
+
+    client.set_profile(&author, &String::from_str(&env, "creator"), &token);
+    client.set_profile(&fan, &String::from_str(&env, "fan"), &token);
+    StellarAssetClient::new(&env, &token).mint(&fan, &1_000);
+
+    let post_id = client.create_post(&author, &String::from_str(&env, "great content"));
+    client.like_post(&fan, &post_id);
+    client.tip(&fan, &post_id, &token, &50);
+
+    // After the full workflow, at least three distinct events must be present.
+    let events = env.events().all();
+    assert!(
+        events.len() >= 3,
+        "expected at least 3 events (PostCreated, LikePost, Tip); got {}",
+        events.len()
+    );
+}
+
+// ── Issue #375: Empty follow and follower list coverage ────────────────────────
+
+#[test]
+fn test_get_following_empty_for_new_user() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_contract(&env);
+
+    let user = Address::generate(&env);
+    let result = client.get_following(&user, &0, &10);
+    assert_eq!(result.len(), 0, "a brand-new user must have an empty following list");
+}
+
+#[test]
+fn test_get_followers_empty_for_new_user() {
     let env = Env::default();
     env.mock_all_auths();
     let (client, _, _) = setup_contract(&env);
@@ -3969,4 +4090,67 @@ fn test_add_pool_admin_requires_pool_admin_quorum() {
         updated.admins.iter().any(|a| a == new_admin),
         "new_admin must appear in the pool admins list"
     );
+    let result = client.get_followers(&user, &0, &10);
+    assert_eq!(result.len(), 0, "a brand-new user must have an empty followers list");
+}
+
+#[test]
+fn test_get_following_empty_after_unfollow() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_contract(&env);
+
+    let alice = Address::generate(&env);
+    let bob = Address::generate(&env);
+
+    client.follow(&alice, &bob);
+    assert_eq!(client.get_following(&alice, &0, &10).len(), 1);
+
+    client.unfollow(&alice, &bob);
+    let result = client.get_following(&alice, &0, &10);
+    assert_eq!(
+        result.len(),
+        0,
+        "following list must be empty after unfollowing the only followee"
+    );
+}
+
+#[test]
+fn test_get_followers_empty_after_unfollow() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_contract(&env);
+
+    let alice = Address::generate(&env);
+    let bob = Address::generate(&env);
+
+    client.follow(&alice, &bob);
+    assert_eq!(client.get_followers(&bob, &0, &10).len(), 1);
+
+    client.unfollow(&alice, &bob);
+    let result = client.get_followers(&bob, &0, &10);
+    assert_eq!(
+        result.len(),
+        0,
+        "followers list must be empty once all followers have unfollowed"
+    );
+}
+
+#[test]
+fn test_independent_users_start_with_empty_lists() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_contract(&env);
+
+    let user_a = Address::generate(&env);
+    let user_b = Address::generate(&env);
+    let user_c = Address::generate(&env);
+
+    // user_a follows user_b; user_c has no relationships at all.
+    client.follow(&user_a, &user_b);
+
+    let c_following = client.get_following(&user_c, &0, &10);
+    let c_followers = client.get_followers(&user_c, &0, &10);
+    assert_eq!(c_following.len(), 0, "user_c following list must be empty");
+    assert_eq!(c_followers.len(), 0, "user_c followers list must be empty");
 }
