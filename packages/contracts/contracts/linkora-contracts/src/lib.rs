@@ -1277,6 +1277,10 @@ impl KovaraContract {
         if pool.admins.len() >= initial_len {
             panic_with_error!(&env, ContractError::AdminNotFound);
         }
+        // Prevent removing the last admin to avoid ungovernable state
+        if pool.admins.is_empty() {
+            panic_with_error!(&env, ContractError::ThresholdUnreachable);
+        }
         if pool.threshold > pool.admins.len() {
             panic_with_error!(&env, ContractError::ThresholdUnreachable);
         }
