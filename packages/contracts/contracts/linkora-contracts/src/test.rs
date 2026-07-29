@@ -77,6 +77,47 @@ fn test_username_reverse_index_update() {
     );
 }
 
+
+use super::*;
+use soroban_sdk::{
+    symbol_short,
+    testutils::{storage::Persistent as _, Address as _, Events, Ledger},
+    token::{Client as TokenClient, StellarAssetClient},
+    vec, Address, BytesN, Env, String,
+};
+
+fn setup_token(env: &Env, admin: &Address) -> Address {
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+    StellarAssetClient::new(env, &token_id.address()).mint(admin, &10_000);
+    token_id.address()
+}
+
+fn make_token(env: &Env) -> Address {
+    let admin = Address::generate(env);
+    setup_token(env, &admin)
+}
+
+fn setup_contract(env: &Env) -> (KovaraContractClient<'_>, Address, Address) {
+    let contract_id = env.register(KovaraContract, ());
+    let client = KovaraContractClient::new(env, &contract_id);
+    let admin = Address::generate(env);
+    let treasury = Address::generate(env);
+    client.initialize(&admin, &treasury, &0);
+    (client, admin, treasury)
+}
+
+#[test]
+fn test_set_and_get_profile() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_contract(&env);
+
+    let user = Address::generate(&env);
+    let token = make_token(&env);
+    client.set_profile(&user, &String::from_str(&env, "alice"), &token);
+    let profile = client.get_profile(&user).unwrap();
+    assert_eq!(profile.username, String::from_str(&env, "alice"));
+}
 #[test]
 #[should_panic(expected = "Error(Contract, #5)")]
 fn test_username_duplicate_rejected() {
@@ -115,6 +156,48 @@ fn test_get_following_first_page() {
     assert_eq!(page.len(), 5);
     assert_eq!(page.get(0).unwrap(), followees.get(0).unwrap());
     assert_eq!(page.get(4).unwrap(), followees.get(4).unwrap());
+}
+
+
+use super::*;
+use soroban_sdk::{
+    symbol_short,
+    testutils::{storage::Persistent as _, Address as _, Events, Ledger},
+    token::{Client as TokenClient, StellarAssetClient},
+    vec, Address, BytesN, Env, String,
+};
+
+fn setup_token(env: &Env, admin: &Address) -> Address {
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+    StellarAssetClient::new(env, &token_id.address()).mint(admin, &10_000);
+    token_id.address()
+}
+
+fn make_token(env: &Env) -> Address {
+    let admin = Address::generate(env);
+    setup_token(env, &admin)
+}
+
+fn setup_contract(env: &Env) -> (KovaraContractClient<'_>, Address, Address) {
+    let contract_id = env.register(KovaraContract, ());
+    let client = KovaraContractClient::new(env, &contract_id);
+    let admin = Address::generate(env);
+    let treasury = Address::generate(env);
+    client.initialize(&admin, &treasury, &0);
+    (client, admin, treasury)
+}
+
+#[test]
+fn test_set_and_get_profile() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_contract(&env);
+
+    let user = Address::generate(&env);
+    let token = make_token(&env);
+    client.set_profile(&user, &String::from_str(&env, "alice"), &token);
+    let profile = client.get_profile(&user).unwrap();
+    assert_eq!(profile.username, String::from_str(&env, "alice"));
 }
 
 #[test]
@@ -228,6 +311,47 @@ fn test_get_posts_by_author_first_page() {
     assert_eq!(page.get(4).unwrap(), 5u64);
 }
 
+
+#[test]
+fn test_get_following_second_page() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(KovaraContract, ());
+    let client = KovaraContractClient::new(&env, &contract_id);
+
+    let alice = Address::generate(&env);
+    let mut followees = soroban_sdk::vec![&env];
+    for _ in 0..10 {
+        followees.push_back(Address::generate(&env));
+    }
+
+    for followee in followees.iter() {
+        client.follow(&alice, &followee);
+    }
+
+    let page = client.get_following(&alice, &5, &5);
+    assert_eq!(page.len(), 5);
+    assert_eq!(page.get(0).unwrap(), followees.get(5).unwrap());
+    assert_eq!(page.get(4).unwrap(), followees.get(9).unwrap());
+}
+
+#[test]
+fn test_get_following_offset_beyond_end() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(KovaraContract, ());
+    let client = KovaraContractClient::new(&env, &contract_id);
+
+    let alice = Address::generate(&env);
+    let bob = Address::generate(&env);
+
+    client.follow(&alice, &bob);
+
+    let page = client.get_following(&alice, &10, &10);
+    assert_eq!(page.len(), 0);
+}
+
+
 #[test]
 fn test_get_posts_by_author_second_page() {
     let env = Env::default();
@@ -267,6 +391,7 @@ fn test_get_posts_by_author_second_page() {
     assert_eq!(page.get(0).unwrap(), 6u64);
     assert_eq!(page.get(4).unwrap(), 10u64);
 }
+
 
 #[test]
 fn test_get_posts_by_author_offset_beyond_end() {
@@ -338,6 +463,60 @@ fn test_username_same_user_can_reregister_same_name() {
         Some(user)
     );
 }
+
+
+#[test]
+fn test_get_posts_by_author_offset_beyond_end() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(KovaraContract, ());
+    let client = KovaraContractClient::new(&env, &contract_id);
+
+    let author = Address::generate(&env);
+
+    client.create_post(&author, &String::from_str(&env, "post 1"));
+
+    let page = client.get_posts_by_author(&author, &10, &10);
+    assert_eq!(page.len(), 0);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #11)")]
+fn test_get_posts_by_author_limit_exceeds_maximum() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(KovaraContract, ());
+    let client = KovaraContractClient::new(&env, &contract_id);
+
+    let author = Address::generate(&env);
+
+    client.create_post(&author, &String::from_str(&env, "post 1"));
+
+    client.get_posts_by_author(&author, &0, &51);
+}
+
+#[test]
+fn test_get_posts_by_author_after_delete() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(KovaraContract, ());
+    let client = KovaraContractClient::new(&env, &contract_id);
+
+    let author = Address::generate(&env);
+
+    let id1 = client.create_post(&author, &String::from_str(&env, "post 1"));
+    let id2 = client.create_post(&author, &String::from_str(&env, "post 2"));
+    let id3 = client.create_post(&author, &String::from_str(&env, "post 3"));
+
+    // Delete middle post
+    client.delete_post(&author, &id2);
+
+    let page = client.get_posts_by_author(&author, &0, &10);
+    assert_eq!(page.len(), 2);
+    assert_eq!(page.get(0).unwrap(), id1);
+    assert_eq!(page.get(1).unwrap(), id3);
+}
+
 
 #[test]
 fn test_tip_fee_split() {
