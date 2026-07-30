@@ -35,6 +35,59 @@ function makeMockDb(): jest.Mocked<Database> {
   } as jest.Mocked<Database>;
 }
 
+
+  async getRecommendation(userId: string): Promise<AiRecommendationResponse> {
+    const snapshot = this.redisService
+      ? await this.redisService.getUserSnapshot(userId)
+      : null;
+
+    if (!snapshot) {
+      return {
+        userId,
+        recommendations: [],
+        explainability: {
+          factors: ['insufficient_data'],
+          confidence: 0.1,
+          userSignalAge: 0,
+          signalsUsed: [],
+          modelVersion: 'rustacademy-recommender-v2',
+        },
+        generatedAt: new Date(),
+      };
+    }
+
+    const explainability = this.redisService
+      ? await this.redisService.getRecommendationExplainability(userId)
+      : null;
+
+    const recommendedCourses = snapshot.recentCourses.length > 0
+      ? snapshot.recentCourses.slice(0, 3)
+      : ['rust-fundamentals', 'smart-contracts-101', 'stellar-basics'];
+
+    const recommendations = recommendedCourses.map((courseId, index) => ({
+      courseId,
+      score: Math.max(0, 1 - index * 0.2 - (snapshot.interactionCount > 0 ? 0 : 0.3)),
+      reason: explainability?.factors[index] || 'course_popularity',
+    }));
+
+    if (this.monitoringService) {
+      this.monitoringService.recordDomainEvent('recommendation_generated', 'ai');
+    }
+
+    return {
+      userId,
+      recommendations,
+      explainability: explainability || {
+        factors: [],
+        confidence: 0.1,
+        userSignalAge: 0,
+        signalsUsed: [],
+        modelVersion: 'rustacademy-recommender-v2',
+      },
+      generatedAt: new Date(),
+    };
+  }
+
 describe("API Routes", () => {
   let db: jest.Mocked<Database>;
   let app: ReturnType<typeof createApp>;
@@ -147,6 +200,59 @@ describe("API Routes", () => {
       expect(res.body).toMatchObject({ code: "INVALID_ADDRESS" });
     });
 
+    
+  async getRecommendation(userId: string): Promise<AiRecommendationResponse> {
+    const snapshot = this.redisService
+      ? await this.redisService.getUserSnapshot(userId)
+      : null;
+
+    if (!snapshot) {
+      return {
+        userId,
+        recommendations: [],
+        explainability: {
+          factors: ['insufficient_data'],
+          confidence: 0.1,
+          userSignalAge: 0,
+          signalsUsed: [],
+          modelVersion: 'rustacademy-recommender-v2',
+        },
+        generatedAt: new Date(),
+      };
+    }
+
+    const explainability = this.redisService
+      ? await this.redisService.getRecommendationExplainability(userId)
+      : null;
+
+    const recommendedCourses = snapshot.recentCourses.length > 0
+      ? snapshot.recentCourses.slice(0, 3)
+      : ['rust-fundamentals', 'smart-contracts-101', 'stellar-basics'];
+
+    const recommendations = recommendedCourses.map((courseId, index) => ({
+      courseId,
+      score: Math.max(0, 1 - index * 0.2 - (snapshot.interactionCount > 0 ? 0 : 0.3)),
+      reason: explainability?.factors[index] || 'course_popularity',
+    }));
+
+    if (this.monitoringService) {
+      this.monitoringService.recordDomainEvent('recommendation_generated', 'ai');
+    }
+
+    return {
+      userId,
+      recommendations,
+      explainability: explainability || {
+        factors: [],
+        confidence: 0.1,
+        userSignalAge: 0,
+        signalsUsed: [],
+        modelVersion: 'rustacademy-recommender-v2',
+      },
+      generatedAt: new Date(),
+    };
+  }
+
     it("returns 400 for whitespace-only address", async () => {
       const res = await request(app).get("/api/profiles/" + encodeURIComponent("   "));
       expect(res.status).toBe(400);
@@ -173,6 +279,59 @@ describe("API Routes", () => {
       expect(res.body).toMatchObject({ code: "INVALID_ADDRESS" });
     });
   });
+
+  
+  async getRecommendation(userId: string): Promise<AiRecommendationResponse> {
+    const snapshot = this.redisService
+      ? await this.redisService.getUserSnapshot(userId)
+      : null;
+
+    if (!snapshot) {
+      return {
+        userId,
+        recommendations: [],
+        explainability: {
+          factors: ['insufficient_data'],
+          confidence: 0.1,
+          userSignalAge: 0,
+          signalsUsed: [],
+          modelVersion: 'rustacademy-recommender-v2',
+        },
+        generatedAt: new Date(),
+      };
+    }
+
+    const explainability = this.redisService
+      ? await this.redisService.getRecommendationExplainability(userId)
+      : null;
+
+    const recommendedCourses = snapshot.recentCourses.length > 0
+      ? snapshot.recentCourses.slice(0, 3)
+      : ['rust-fundamentals', 'smart-contracts-101', 'stellar-basics'];
+
+    const recommendations = recommendedCourses.map((courseId, index) => ({
+      courseId,
+      score: Math.max(0, 1 - index * 0.2 - (snapshot.interactionCount > 0 ? 0 : 0.3)),
+      reason: explainability?.factors[index] || 'course_popularity',
+    }));
+
+    if (this.monitoringService) {
+      this.monitoringService.recordDomainEvent('recommendation_generated', 'ai');
+    }
+
+    return {
+      userId,
+      recommendations,
+      explainability: explainability || {
+        factors: [],
+        confidence: 0.1,
+        userSignalAge: 0,
+        signalsUsed: [],
+        modelVersion: 'rustacademy-recommender-v2',
+      },
+      generatedAt: new Date(),
+    };
+  }
 
   describe("isValidStellarAddress", () => {
     it("returns true for a valid 56-char G-prefixed address", () => {
