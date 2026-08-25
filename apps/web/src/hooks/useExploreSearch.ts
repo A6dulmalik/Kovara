@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 interface SearchParams {
   query: string;
@@ -11,8 +11,15 @@ export function useExploreSearch({ query, limit = 20 }: SearchParams) {
   const [hasMore, setHasMore] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
-  // Reset pagination state when the active search query changes
+  // References to track active request controllers and request sequence counters
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const requestIdRef = useRef<number>(0);
+
+  // Reset pagination and cancel pending requests when the query changes
   useEffect(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
     setItems([]);
     setCursor(null);
     setHasMore(true);
@@ -21,15 +28,31 @@ export function useExploreSearch({ query, limit = 20 }: SearchParams) {
   const loadMore = useCallback(async () => {
     if (isLoading || !hasMore) return;
 
+    // Abort any prior in-flight request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    // Increment request sequence ID to guard against out-of-order resolution
+    const currentRequestId = ++requestIdRef.current;
+
     setIsLoading(true);
     try {
       const response = await fetch(
-        `/api/indexer/search?q=${encodeURIComponent(query)}&limit=${limit}${cursor ? `&cursor=${cursor}` : ''}`
+        `/api/indexer/search?q=${encodeURIComponent(query)}&limit=${limit}${cursor ? `&cursor=${cursor}` : ''}`,
+        { signal: controller.signal }
       );
       const data = await response.json();
 
+      // Guard: Ensure only the latest initiated request updates the component state
+      if (currentRequestId !== requestIdRef.current) {
+        return;
+      }
+
       setItems((prevItems) => {
-        // Prevent duplicate entries by filtering against existing IDs
         const existingIds = new Set(prevItems.map((item) => item.id));
         const uniqueNewItems = data.results.filter((item: any) => !existingIds.has(item.id));
         return [...prevItems, ...uniqueNewItems];
@@ -37,10 +60,14 @@ export function useExploreSearch({ query, limit = 20 }: SearchParams) {
 
       setCursor(data.nextCursor || null);
       setHasMore(data.hasMore ?? false);
-    } catch (error) {
-      console.error('Failed to fetch explore search results:', error);
+    } catch (error: any) {
+      if (error.name !== 'AbortError') {
+        console.error('Failed to fetch explore search results:', error);
+      }
     } finally {
-      setIsLoading(false);
+      if (currentRequestId === requestIdRef.current) {
+        setIsLoading(false);
+      }
     }
   }, [query, cursor, hasMore, isLoading, limit]);
 
