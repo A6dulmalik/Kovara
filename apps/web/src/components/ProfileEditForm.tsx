@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { ProfileContractClient, ProfileData } from '@/lib/contract/profile';
 import { useOnboardingWallet } from '@/hooks/useWallet';
+import { validateUsername } from '@/lib/validation/username';
 import { Loader2, CheckCircle2, AlertCircle, Send } from 'lucide-react';
 
 export type UpdateState = 'idle' | 'signing' | 'pending' | 'confirmed' | 'failed';
@@ -16,9 +17,24 @@ export function ProfileEditForm() {
   const [txState, setTxState] = useState<UpdateState>('idle');
   const [txHash, setTxHash] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
+
+  const handleUsernameChange = (val: string) => {
+    setUsername(val);
+    const result = validateUsername(val);
+    setValidationError(result.isValid ? null : result.error || null);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Final check against validation rules
+    const validation = validateUsername(username);
+    if (!validation.isValid) {
+      setValidationError(validation.error || 'Invalid username');
+      return;
+    }
+
     if (!wallet.address) {
       setErrorMessage('No wallet connected');
       return;
@@ -28,18 +44,14 @@ export function ProfileEditForm() {
     setTxHash(null);
 
     try {
-      // 1. Signing state
       setTxState('signing');
       const profilePayload: ProfileData = { username, bio, avatarUrl };
 
-      // 2. Pending / Submission state
       setTxState('pending');
       const hash = await ProfileContractClient.setProfile(wallet.address, profilePayload);
       
       setTxHash(hash);
       setTxState('confirmed');
-
-      // 3. Refresh profile state across the application
       await refresh();
     } catch (err: any) {
       console.error('Profile update failed:', err);
@@ -57,10 +69,20 @@ export function ProfileEditForm() {
         <input
           type="text"
           value={username}
-          onChange={(e) => setUsername(e.target.value)}
+          onChange={(e) => handleUsernameChange(e.target.value)}
           required
-          className="w-full px-3 py-2 bg-gray-900 border border-gray-800 rounded-lg focus:outline-none focus:border-purple-500"
+          className={`w-full px-3 py-2 bg-gray-900 border rounded-lg focus:outline-none transition ${
+            validationError ? 'border-red-500' : 'border-gray-800 focus:border-purple-500'
+          }`}
         />
+        {validationError && (
+          <p className="mt-1 text-xs text-red-400 flex items-center gap-1">
+            <AlertCircle className="w-3.5 h-3.5" /> {validationError}
+          </p>
+        )}
+        <p className="mt-1 text-[11px] text-gray-500">
+          3-20 characters. Letters, numbers, and underscores only.
+        </p>
       </div>
 
       <div>
@@ -83,7 +105,6 @@ export function ProfileEditForm() {
         />
       </div>
 
-      {/* State Feedback Section */}
       {txState === 'signing' && (
         <div className="flex items-center gap-2 p-3 bg-purple-900/30 border border-purple-500/40 rounded-lg text-purple-300 text-sm">
           <Loader2 className="w-4 h-4 animate-spin" />
@@ -119,7 +140,7 @@ export function ProfileEditForm() {
 
       <button
         type="submit"
-        disabled={txState === 'signing' || txState === 'pending'}
+        disabled={!!validationError || txState === 'signing' || txState === 'pending'}
         className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 font-medium rounded-lg transition flex items-center justify-center gap-2"
       >
         <Send className="w-4 h-4" />
