@@ -6,7 +6,7 @@ export interface DepositState {
   error: string | null;
   txHash?: string;
 }
-
+ // const signed = await kit.signTransaction({ txXdr: xdrEnv });
 export interface UsePoolDepositReturn extends DepositState {
   deposit: (poolId: string, amount: string, token: string) => Promise<void>;
   reset: () => void;

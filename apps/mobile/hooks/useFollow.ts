@@ -69,7 +69,7 @@ export const useFollow = (targetAddress: string) => {
       queryClient.invalidateQueries({ queryKey: ["followerCount", targetAddress] });
     },
   });
-
+ // const signed = await kit.signTransaction({ txXdr: xdrEnv });
   const toggleFollow = useCallback(() => {
     if (isLoading || followMutation.isPending || unfollowMutation.isPending) return;
 

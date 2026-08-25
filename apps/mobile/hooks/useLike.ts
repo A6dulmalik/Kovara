@@ -6,7 +6,7 @@ import { useWallet } from "./useWallet";
 import { useToast } from "../context/ToastContext";
 
 // ── SDK-backed like/unlike transactions ─────────────────────────────────────
-
+ // const signed = await kit.signTransaction({ txXdr: xdrEnv });
 async function contractLikePost(liker: string, postId: number, rpcUrl: string, contractId: string): Promise<void> {
   const client = new KovaraClient({ contractId, rpcUrl });
   const xdrEnv = client.like(liker, postId);

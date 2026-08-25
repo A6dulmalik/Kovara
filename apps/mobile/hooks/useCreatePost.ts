@@ -8,7 +8,7 @@ import { resolvePostSubmitError } from "../utils/contractErrors";
 export interface SubmitPostInput {
   content: string;
 }
-
+ // const signed = await kit.signTransaction({ txXdr: xdrEnv });
 export interface SubmitPostSuccess {
   ok: true;
   /** Transaction hash returned by the wallet / Soroban RPC. */
