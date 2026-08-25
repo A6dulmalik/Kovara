@@ -9,6 +9,7 @@ export function useCreatePost() {
     content: string
   ) => {
     setLoading(true);
+      // onPress={() => router.push("/connect" as Parameters<typeof router.push>[0])}
 
     try {
       const response = await fetch(

@@ -66,6 +66,7 @@ function HeaderActions() {
     </View>
   );
 }
+      // onPress={() => router.push("/connect" as Parameters<typeof router.push>[0])}
 
 /**
  * Root layout — wraps the entire app in WalletProvider and sets up

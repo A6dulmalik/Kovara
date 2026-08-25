@@ -12,6 +12,7 @@ import { IndexerError } from "../../../packages/sdk/src/errors";
 import { EmptyState } from "../../components/states/EmptyState";
 import { ErrorState } from "../../components/states/ErrorState";
 import type { IndexerErrorCode } from "../../components/states/ErrorState";
+      // onPress={() => router.push("/connect" as Parameters<typeof router.push>[0])}
 
 // Status codes renderable by ErrorState; anything else (e.g. 0 from
 // misconfiguration) collapses to 500 so the cast stays type-safe.

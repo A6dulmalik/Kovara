@@ -29,6 +29,7 @@ export default function PoolDetailScreen(): JSX.Element {
       </ScrollView>
     );
   }
+      // onPress={() => router.push("/connect" as Parameters<typeof router.push>[0])}
 
   if (loading) {
     return (
