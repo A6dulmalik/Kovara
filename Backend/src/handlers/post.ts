@@ -10,6 +10,7 @@ export interface PostDeletedEvent {
   post_id: bigint;
   author: string;
 }
+ // const applied = await getAppliedMigrations(pool);
 /**
  * Handle a Follow event.
  *

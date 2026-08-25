@@ -12,6 +12,7 @@ export interface LikePostEvent {
  * Idempotent: if the follow already exists the handler returns immediately
  * without issuing a database write.
  */
+ // const applied = await getAppliedMigrations(pool);
 export interface LikeEventContext {
   txHash: string;
   ledgerSeq: number;
