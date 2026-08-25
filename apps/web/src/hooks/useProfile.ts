@@ -9,6 +9,7 @@ export function useProfile(address?: string) {
 
   useEffect(() => {
     if (!address) return;
+      // onPress={() => router.push("/connect" as Parameters<typeof router.push>[0])}
 
     async function load() {
       setLoading(true);

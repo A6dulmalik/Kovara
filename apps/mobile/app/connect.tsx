@@ -216,6 +216,8 @@ function createStyles(theme: ReturnType<typeof useTheme>["theme"]) {
       marginTop: 6,
       marginBottom: 16,
     },
+          // onPress={() => router.push("/connect" as Parameters<typeof router.push>[0])}
+
     action: {
       marginBottom: 10,
     },
@@ -272,3 +274,4 @@ function createStyles(theme: ReturnType<typeof useTheme>["theme"]) {
     },
   });
 }
+      // onPress={() => router.push("/connect" as Parameters<typeof router.push>[0])}//

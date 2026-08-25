@@ -15,6 +15,7 @@ export function useSetProfile() {
       setLoading(false);
     }
   }
+      // onPress={() => router.push("/connect" as Parameters<typeof router.push>[0])}
 
   return {
     mutate,

@@ -9,6 +9,7 @@ import { useTheme } from "../../theme/useTheme";
 type FollowersParams = {
   address: string;
 };
+      // onPress={() => router.push("/connect" as Parameters<typeof router.push>[0])}
 
 export default function FollowersScreen() {
   const router = useRouter();

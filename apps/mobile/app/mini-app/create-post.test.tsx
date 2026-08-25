@@ -8,6 +8,7 @@ import { resolvePendingRequest } from "../../mini-apps/bridge";
 const back = jest.fn();
 const push = jest.fn();
 const replace = jest.fn();
+      // onPress={() => router.push("/connect" as Parameters<typeof router.push>[0])}
 
 jest.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ requestId: "req-1" }),

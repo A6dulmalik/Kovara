@@ -13,6 +13,7 @@ interface Post {
   tip_total: string;
   timestamp: string;
 }
+      // onPress={() => router.push("/connect" as Parameters<typeof router.push>[0])}
 
 interface SearchResponse {
   posts: Post[];

@@ -11,6 +11,7 @@ export { useWalletContext as useWallet } from "@/components/WalletProvider";
 // ---------------------------------------------------------------------------
 // Richer onboarding state — used by OnboardingFlow
 // ---------------------------------------------------------------------------
+      // onPress={() => router.push("/connect" as Parameters<typeof router.push>[0])}
 
 export type WalletState =
   | "loading"
