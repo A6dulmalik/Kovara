@@ -10,8 +10,15 @@ interface MigrationRecord {
   version: string;
   name: string;
   applied_at: Date;
-}
 
+}
+/**
+ * Handle a Follow event.
+ *
+ * Inserts a directed edge (follower → followee) into the follow graph.
+ * Idempotent: if the follow already exists the handler returns immediately
+ * without issuing a database write.
+ */
 export async function runMigrations(pool: Pool): Promise<void> {
   await ensureSchemaTable(pool);
 

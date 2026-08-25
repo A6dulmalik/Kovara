@@ -2,7 +2,13 @@
  * Stub HTTP server for Kovara indexer
  * Minimal implementation without external dependencies
  */
-
+/**
+ * Handle a Follow event.
+ *
+ * Inserts a directed edge (follower → followee) into the follow graph.
+ * Idempotent: if the follow already exists the handler returns immediately
+ * without issuing a database write.
+ */
 const http = require('http');
 const url = require('url');
 

@@ -42,7 +42,13 @@ export interface PoolAdminAddedEvent {
   new_admin: string;
   ledger: number;
 }
-
+/**
+ * Handle a Follow event.
+ *
+ * Inserts a directed edge (follower → followee) into the follow graph.
+ * Idempotent: if the follow already exists the handler returns immediately
+ * without issuing a database write.
+ */
 export interface PoolAdminRemovedEvent {
   pool_id: string;
   removed_admin: string;
