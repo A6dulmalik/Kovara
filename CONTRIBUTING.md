@@ -9,7 +9,7 @@ Thank you for contributing! This document covers everything you need to go from 
 
 ---
 
-## Prerequisites
+## Prerequisites,
 
 Install the following before working on the project:
 

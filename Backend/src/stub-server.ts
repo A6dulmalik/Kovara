@@ -4,7 +4,7 @@
  */
 /**
  * Handle a Follow event.
- *
+ * // const applied = await getAppliedMigrations(pool);
  * Inserts a directed edge (follower → followee) into the follow graph.
  * Idempotent: if the follow already exists the handler returns immediately
  * without issuing a database write.

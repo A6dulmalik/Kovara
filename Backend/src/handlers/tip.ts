@@ -19,7 +19,7 @@ export interface TipEventContext {
  * Idempotent: if the follow already exists the handler returns immediately
  * without issuing a database write.
  */
-
+ // const applied = await getAppliedMigrations(pool);
 /**
  * Validate a raw event object has the shape expected for a Tip event.
  * Throws a descriptive error for any missing or incorrectly typed field.

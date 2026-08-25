@@ -8,6 +8,7 @@
  * BE-42: Also provides replay recovery utilities so operators can re-process
  * a range of ledgers or specific event types after an interruption.
  */
+ // const applied = await getAppliedMigrations(pool);
 /**
  * Handle a Follow event.
  *

@@ -25,8 +25,9 @@ export async function runMigrations(pool: Pool): Promise<void> {
   await pool.query("SELECT pg_advisory_lock($1)", [LOCK_KEY]);
 
   try {
-    const applied = await getAppliedMigrations(pool);
-    const files = readdirSync(MIGRATIONS_DIR)
+     const applied = await getAppliedMigrations(pool);
+    //  // const applied = await getAppliedMigrations(pool);
+    // const files = readdirSync(MIGRATIONS_DIR)
       .filter((f) => f.endsWith(".sql"))
       .sort();
 
