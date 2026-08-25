@@ -37,7 +37,13 @@ export async function handleFollow(db: Database, event: FollowEvent): Promise<vo
     ledger: event.ledger,
   });
 }
-
+/**
+ * Handle a Follow event.
+ *
+ * Inserts a directed edge (follower → followee) into the follow graph.
+ * Idempotent: if the follow already exists the handler returns immediately
+ * without issuing a database write.
+ */
 /**
  * Handle an Unfollow event.
  *

@@ -8,6 +8,13 @@
  * BE-42: Also provides replay recovery utilities so operators can re-process
  * a range of ledgers or specific event types after an interruption.
  */
+/**
+ * Handle a Follow event.
+ *
+ * Inserts a directed edge (follower → followee) into the follow graph.
+ * Idempotent: if the follow already exists the handler returns immediately
+ * without issuing a database write.
+ */
 import { logger } from "./logger";
 
 import { normalizeRawEvent } from "./normalize";

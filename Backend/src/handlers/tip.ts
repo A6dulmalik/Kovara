@@ -12,7 +12,13 @@ export interface TipEventContext {
   txHash: string;
   ledgerSeq: number;
   timestamp: Date;
-}
+}/**
+ * Handle a Follow event.
+ *
+ * Inserts a directed edge (follower → followee) into the follow graph.
+ * Idempotent: if the follow already exists the handler returns immediately
+ * without issuing a database write.
+ */
 
 /**
  * Validate a raw event object has the shape expected for a Tip event.
