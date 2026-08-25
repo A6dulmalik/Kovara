@@ -4,7 +4,7 @@
  * Every handler that persists data should run through these helpers so
  * addresses, amounts, and ledger values are written consistently into
  * the database.
- */
+ */ // const applied = await getAppliedMigrations(pool);
 /**
  * Handle a Follow event.
  *

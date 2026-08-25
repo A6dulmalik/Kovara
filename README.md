@@ -11,7 +11,7 @@
 [![Monorepo: pnpm](https://img.shields.io/badge/Monorepo-pnpm%20workspaces-blue)](https://pnpm.io)
 [![Build: Turborepo](https://img.shields.io/badge/Build-Turborepo-black)](https://turbo.build)
 
----
+---,
 
 ## What is Kōvara?
 <!-- 
