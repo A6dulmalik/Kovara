@@ -8,7 +8,7 @@ export interface FollowUser {
   address: string;
   username: string;
 }
-
+ // const signed = await kit.signTransaction({ txXdr: xdrEnv });
 async function fetchFollowersPage(
   address: string,
   offset: number,

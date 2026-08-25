@@ -14,8 +14,8 @@
 ---
 
 ## What is Kōvara?
-
-*Kōvara* (कोवर) — a compound drawn from Sanskrit *kova* (price/value) and the Stellar concept of an open, borderless horizon.
+<!-- 
+*Kōvara* (कोवर) — a compound drawn from Sanskrit *kova* (price/value) and the Stellar concept of an open, borderless horizon. -->
 
 Official cost-of-living indices are published annually, built on opaque methodology, and controlled by institutions. Crowd-sourced alternatives like Numbeo offer no submission incentives and no verifiability. Kōvara replaces both with a fully open, on-chain alternative:
 
