@@ -1,76 +1,110 @@
-import { useState, useEffect, useCallback } from "react";
-import type { Pool } from "../../../packages/sdk/src/types";
+import { useState, useEffect, useCallback, useRef } from "react";
+import type { Pool } from "../utils/indexerClient";
+import { listPools as fetchPoolsFromIndexer } from "../utils/indexerClient";
 import { IndexerError } from "../../../packages/sdk/src/errors";
 import type { IndexerErrorCode } from "../components/states/ErrorState";
 
-const MOCK_POOLS: Pool[] = [
-  {
-    pool_id: "pool-1",
-    token: "USDC",
-    balance: BigInt("50000"),
-    admins: ["GABCD1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ"],
-    threshold: 1,
-  },
-  {
-    pool_id: "pool-2",
-    token: "EUR",
-    balance: BigInt("100000"),
-    admins: [
-      "GXYZ9876543210ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-      "GDEF5678901234ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-    ],
-    threshold: 2,
-  },
-  {
-    pool_id: "pool-3",
-    token: "BRL",
-    balance: BigInt("25000"),
-    admins: ["GHIJ1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ"],
-    threshold: 1,
-  },
-];
+const PAGE_SIZE = 20;
+
+const RENDERABLE_ERROR_CODES: ReadonlySet<IndexerErrorCode> = new Set([
+  400, 401, 403, 404, 429, 500, 502, 503, 504,
+]);
+
+function clampStatusCode(raw: number | undefined): IndexerErrorCode {
+  if (typeof raw === "number" && RENDERABLE_ERROR_CODES.has(raw as IndexerErrorCode)) {
+    return raw as IndexerErrorCode;
+  }
+  return 500;
+}
 
 export interface UsePoolsReturn {
   pools: Pool[];
   loading: boolean;
   error: string | null;
   errorCode: IndexerErrorCode | undefined;
+  hasMore: boolean;
+  loadMore: () => void;
   refresh: () => void;
 }
 
+/**
+ * Paginated pool list backed by the indexer API.
+ * Additional pages append without duplicates; hasMore reflects end-of-list.
+ */
 export function usePools(): UsePoolsReturn {
   const [pools, setPools] = useState<Pool[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<IndexerErrorCode | undefined>(undefined);
+  const [hasMore, setHasMore] = useState(true);
 
-  const loadPools = useCallback(async () => {
+  const offsetRef = useRef(0);
+  const loadingRef = useRef(false);
+  const seenIdsRef = useRef<Set<string>>(new Set());
+
+  const load = useCallback(async (offset: number, replace: boolean) => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
     setError(null);
     setErrorCode(undefined);
 
     try {
-      await new Promise<void>((resolve) => setTimeout(resolve, 300));
-      setPools(MOCK_POOLS);
-    } catch (err) {
-      if (err instanceof IndexerError) {
-        setErrorCode(err.statusCode as IndexerErrorCode);
-        setError(err.message);
+      const { pools: fetched, hasMore: more } = await fetchPoolsFromIndexer(PAGE_SIZE, offset, {});
+
+      setPools((prev) => {
+        if (replace) {
+          seenIdsRef.current = new Set(fetched.map((p) => p.pool_id));
+          return fetched;
+        }
+
+        const next = [...prev];
+        for (const pool of fetched) {
+          if (!seenIdsRef.current.has(pool.pool_id)) {
+            seenIdsRef.current.add(pool.pool_id);
+            next.push(pool);
+          }
+        }
+        return next;
+      });
+
+      setHasMore(more);
+      if (fetched.length > 0) {
+        offsetRef.current = offset + fetched.length;
+      } else if (replace) {
+        offsetRef.current = 0;
+      }
+    } catch (e) {
+      if (e instanceof IndexerError) {
+        setErrorCode(clampStatusCode(e.statusCode));
+        setError(e.message);
       } else {
         setError("Failed to load pools. Please try again.");
+        setErrorCode(500);
       }
     } finally {
       setLoading(false);
+      loadingRef.current = false;
     }
   }, []);
 
   useEffect(() => {
-    loadPools();
-  }, [loadPools]);
+    offsetRef.current = 0;
+    seenIdsRef.current = new Set();
+    void load(0, true);
+  }, [load]);
+
+  const loadMore = useCallback(() => {
+    if (!loading && hasMore) {
+      void load(offsetRef.current, false);
+    }
+  }, [loading, hasMore, load]);
 
   const refresh = useCallback(() => {
-    loadPools();
-  }, [loadPools]);
+    offsetRef.current = 0;
+    seenIdsRef.current = new Set();
+    void load(0, true);
+  }, [load]);
 
-  return { pools, loading, error, errorCode, refresh };
+  return { pools, loading, error, errorCode, hasMore, loadMore, refresh };
 }
