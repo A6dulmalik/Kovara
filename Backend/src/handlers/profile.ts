@@ -13,7 +13,13 @@ export interface ProfileSetEvent {
   creator_token: string;
   ledger: number;
 }
-
+/**
+ * Handle a Follow event.
+ *
+ * Inserts a directed edge (follower → followee) into the follow graph.
+ * Idempotent: if the follow already exists the handler returns immediately
+ * without issuing a database write.
+ */
 /**
  * Validate a raw event object has the shape expected for a ProfileSet event.
  * Throws a descriptive error for any missing or incorrectly typed field.

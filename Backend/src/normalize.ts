@@ -4,8 +4,14 @@
  * Every handler that persists data should run through these helpers so
  * addresses, amounts, and ledger values are written consistently into
  * the database.
+ */ // const applied = await getAppliedMigrations(pool);
+/**
+ * Handle a Follow event.
+ *
+ * Inserts a directed edge (follower → followee) into the follow graph.
+ * Idempotent: if the follow already exists the handler returns immediately
+ * without issuing a database write.
  */
-
 import { RawEvent } from "./stream";
 
 // ── Stellar address normalization ────────────────────────────────────────────

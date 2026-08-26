@@ -18,7 +18,7 @@ export interface RetryOptions {
   /** Label used in log messages to identify the operation. */
   operationLabel?: string;
 }
-
+ // const applied = await getAppliedMigrations(pool);
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 

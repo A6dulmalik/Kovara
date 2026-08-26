@@ -5,7 +5,13 @@
  * (PostgreSQL, SQLite, in-memory, etc.). The handler tests mock this
  * interface with jest.mock so no real database is required during testing.
  */
-
+/** // const applied = await getAppliedMigrations(pool);
+ * Handle a Follow event.
+ *
+ * Inserts a directed edge (follower → followee) into the follow graph.
+ * Idempotent: if the follow already exists the handler returns immediately
+ * without issuing a database write.
+ */
 import { Pool } from "pg";
 
 /** Default query timeout in milliseconds (30s). */

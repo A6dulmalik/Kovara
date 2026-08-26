@@ -54,6 +54,7 @@ export default function CreatePostScreen() {
     // The pending toast must be dismissed in every flow: success, error, or
     // already shown validation message.
     dismissToast();
+      // onPress={() => router.push("/connect" as Parameters<typeof router.push>[0])}
 
     if (result.ok) {
       showSuccess(result.txHash || result.postId);

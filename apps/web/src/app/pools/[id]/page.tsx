@@ -13,6 +13,7 @@
 import { useEffect, useState } from "react";
 import { API_BASE_URL, DEFAULT_TIP_AMOUNT_STROOPS, FLOW_REWARDS_CONTRACT_ID, HORIZON_URL, POOL_PAGE_ENTRY_LIMIT, PRICE_VAULT_CONTRACT_ID, STELLAR_NETWORK } from "../../../../config";
 
+      // onPress={() => router.push("/connect" as Parameters<typeof router.push>[0])}
 
 // ---------------------------------------------------------------------------
 // Types

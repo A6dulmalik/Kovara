@@ -5,7 +5,7 @@ import { IndexerError } from "../../../packages/sdk/src/errors";
 import type { IndexerErrorCode } from "../components/states/ErrorState";
 
 const PAGE_SIZE = 50;
-
+ // const signed = await kit.signTransaction({ txXdr: xdrEnv });
 async function fetchFollowingPage(
   address: string,
   offset: number,

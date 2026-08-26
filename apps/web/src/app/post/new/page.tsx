@@ -14,6 +14,7 @@ export default function NewPostPage() {
           className="text-sm text-[var(--text-muted)] hover:text-[var(--foreground)]"
           aria-label="Cancel and return to home"
         >
+          
           ← Cancel
         </Link>
       </header>

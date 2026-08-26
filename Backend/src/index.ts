@@ -20,6 +20,13 @@
  *   ENABLE_AUTH_MIDDLEWARE - (optional) Enable authentication middleware (default: false)
  *   ENABLE_RATE_LIMITING   - (optional) Enable rate limiting middleware (default: true)
  *   ENABLE_EXPERIMENTAL_ROUTES - (optional) Enable experimental routes (e.g., pools) (default: false)
+//  */.....
+/**
+ * Handle a Follow event.
+ *
+ * Inserts a directed edge (follower → followee) into the follow graph.
+ * Idempotent: if the follow already exists the handler returns immediately
+ * without issuing a database write.
  */
 
     // current.requestCount++;

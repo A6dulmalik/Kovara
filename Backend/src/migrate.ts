@@ -10,16 +10,24 @@ interface MigrationRecord {
   version: string;
   name: string;
   applied_at: Date;
-}
 
+}
+/**
+ * Handle a Follow event.
+ *
+ * Inserts a directed edge (follower → followee) into the follow graph.
+ * Idempotent: if the follow already exists the handler returns immediately
+ * without issuing a database write.
+ */
 export async function runMigrations(pool: Pool): Promise<void> {
   await ensureSchemaTable(pool);
 
   await pool.query("SELECT pg_advisory_lock($1)", [LOCK_KEY]);
 
   try {
-    const applied = await getAppliedMigrations(pool);
-    const files = readdirSync(MIGRATIONS_DIR)
+     const applied = await getAppliedMigrations(pool);
+    //  // const applied = await getAppliedMigrations(pool);
+    // const files = readdirSync(MIGRATIONS_DIR)
       .filter((f) => f.endsWith(".sql"))
       .sort();
 

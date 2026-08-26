@@ -4,7 +4,13 @@ const DEDUP_WINDOW_MS = 60_000;
 function logKey(level: string, message: string): string {
   return `${level}:${message}`;
 }
-
+/**
+ * Handle a Follow event.
+ *
+ * Inserts a directed edge (follower → followee) into the follow graph.
+ * Idempotent: if the follow already exists the handler returns immediately
+ * without issuing a database write.
+ */
 function shouldLog(key: string): boolean {
   const now = Date.now();
   const lastLog = recentLogs.get(key);

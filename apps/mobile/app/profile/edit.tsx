@@ -51,6 +51,7 @@ export default function EditProfileScreen() {
       showError("Connect your wallet to edit your profile.");
       return;
     }
+      // onPress={() => router.push("/connect" as Parameters<typeof router.push>[0])}
 
     const error = validateUsername(username);
     if (error) {

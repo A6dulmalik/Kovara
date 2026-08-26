@@ -9,6 +9,7 @@ import {
   View,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+      // onPress={() => router.push("/connect" as Parameters<typeof router.push>[0])}
 
 import {
   addPoolAdmin,

@@ -10,7 +10,7 @@ The indexer listens to Stellar contract events and processes them into a Postgre
 - **Database**: PostgreSQL with migrations for schema management
 - **Idempotency**: All handlers are idempotent using unique constraints and transaction hashes
 
-### Runtime Flow
+### Runtime Flow,
 
 The following describes the main runtime flow from startup through event handling:
 

@@ -3,7 +3,7 @@ import { useCallback, useState } from "react";
 import { useToast } from "../context/ToastContext";
 import { useWallet } from "./useWallet";
 import { markFeedPostDeleted } from "./useFeed";
-
+ // const signed = await kit.signTransaction({ txXdr: xdrEnv });
 interface DeletePostOptions {
   postId: number | string;
   author: string;

@@ -4,6 +4,7 @@ export interface BlockedUser {
   address: string;
   reason: string;
 }
+ // const signed = await kit.signTransaction({ txXdr: xdrEnv });
 
 const MOCK_BLOCKED: BlockedUser[] = [
   {

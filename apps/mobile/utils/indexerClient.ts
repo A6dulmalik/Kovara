@@ -178,3 +178,109 @@ export async function getPostById(
     throw err;
   }
 }
+
+
+/** Pool row shape returned by the indexer (balance serialized as string). */
+export interface IndexerPoolRow {
+  pool_id: string;
+  token: string;
+  balance: string | number;
+  admins: string[];
+  threshold: number;
+  created_ledger?: number;
+  updated_ledger?: number;
+  token_name?: string;
+  token_symbol?: string;
+  token_decimals?: number;
+}
+
+export interface IndexerPoolListResponse {
+  pools: IndexerPoolRow[];
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
+}
+
+/** App-level Pool shape used by pool hooks and UI. */
+export interface Pool {
+  pool_id: string;
+  token: string;
+  balance: bigint;
+  admins: string[];
+  threshold: number;
+  created_ledger?: number;
+  updated_ledger?: number;
+  token_name?: string;
+  token_symbol?: string;
+  token_decimals?: number;
+}
+
+export function poolFromIndexer(row: IndexerPoolRow): Pool {
+  const balanceRaw = row.balance ?? 0;
+  const balance =
+    typeof balanceRaw === "bigint"
+      ? balanceRaw
+      : BigInt(typeof balanceRaw === "string" ? balanceRaw : Math.trunc(Number(balanceRaw)));
+
+  return {
+    pool_id: String(row.pool_id),
+    token: String(row.token ?? ""),
+    balance,
+    admins: Array.isArray(row.admins) ? row.admins.map(String) : [],
+    threshold: Number(row.threshold ?? 0),
+    created_ledger: row.created_ledger != null ? Number(row.created_ledger) : undefined,
+    updated_ledger: row.updated_ledger != null ? Number(row.updated_ledger) : undefined,
+    token_name: row.token_name,
+    token_symbol: row.token_symbol,
+    token_decimals:
+      row.token_decimals != null && Number.isFinite(Number(row.token_decimals))
+        ? Number(row.token_decimals)
+        : undefined,
+  };
+}
+
+/**
+ * Fetch a page of pools from the indexer using limit/offset pagination.
+ */
+export async function listPools(
+  limit = 20,
+  offset = 0,
+  opts: IndexerOptions = {}
+): Promise<{ pools: Pool[]; total: number; hasMore: boolean }> {
+  const safeLimit = Math.min(Math.max(1, Math.floor(limit)), 100);
+  const safeOffset = Math.max(0, Math.floor(offset));
+  const qs = new URLSearchParams({ limit: String(safeLimit), offset: String(safeOffset) });
+
+  const data = await request<IndexerPoolListResponse>(`/api/pools?${qs.toString()}`, {}, opts);
+  return {
+    pools: (data.pools ?? []).map(poolFromIndexer),
+    total: Number(data.total ?? 0),
+    hasMore: Boolean(data.has_more),
+  };
+}
+
+/**
+ * Fetch a single pool by id. Returns null on 404 so callers can handle missing IDs.
+ */
+export async function getPoolById(
+  poolId: string,
+  opts: IndexerOptions = {}
+): Promise<Pool | null> {
+  const id = String(poolId ?? "").trim();
+  if (!id) {
+    return null;
+  }
+
+  try {
+    const row = await request<IndexerPoolRow>(
+      `/api/pools/${encodeURIComponent(id)}`,
+      {},
+      opts
+    );
+    return poolFromIndexer(row);
+  } catch (err) {
+    if (err instanceof IndexerError && err.statusCode === 404) return null;
+    throw err;
+  }
+}

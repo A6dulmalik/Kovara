@@ -2,15 +2,10 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useWalletContext } from "@/components/WalletProvider";
+import { profileClient } from "@/services/profile-client";
 
 // Re-export the context hook as the canonical useWallet for simple consumers
-// (nav bar, header, etc.) that only need { address, connected, network,
-// connect, disconnect }.
 export { useWalletContext as useWallet } from "@/components/WalletProvider";
-
-// ---------------------------------------------------------------------------
-// Richer onboarding state — used by OnboardingFlow
-// ---------------------------------------------------------------------------
 
 export type WalletState =
   | "loading"
@@ -22,10 +17,18 @@ export type WalletState =
 export type { WalletProviderKind, WalletProviderOption } from "@/lib/walletProviders";
 export { getSupportedWalletProviders, walletProviderOptions } from "@/lib/walletProviders";
 
+export interface UserProfile {
+  username?: string;
+  bio?: string;
+  avatarUrl?: string;
+  [key: string]: any;
+}
+
 export interface WalletInfo {
   address: string | null;
   network: string | null;
   balance: string | null;
+  profile: UserProfile | null;
 }
 
 const HORIZON_TESTNET = "https://horizon-testnet.stellar.org";
@@ -46,13 +49,16 @@ async function fetchXlmBalance(address: string): Promise<string> {
 
 /**
  * useOnboardingWallet — full onboarding state machine used by OnboardingFlow.
- * Delegates connect/disconnect to WalletContext so state stays in sync.
+ * Fetches profile data from chain/indexer, manages loading/error states, and clears on disconnect.
  */
 export function useOnboardingWallet() {
-  const { address, connected, network, connect: ctxConnect } = useWalletContext();
+  const { address, connected, network, connect: ctxConnect, disconnect: ctxDisconnect } = useWalletContext();
 
   const [state, setState] = useState<WalletState>("loading");
   const [balance, setBalance] = useState<string | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [isLoadingProfile, setIsLoadingProfile] = useState<boolean>(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
   const detectState = useCallback(async () => {
     const freighterAvailable =
@@ -66,26 +72,43 @@ export function useOnboardingWallet() {
 
     if (!providers.length) {
       setState("not_installed");
+      setProfile(null);
+      setBalance(null);
+      return;
+    }
+
+    if (!connected || !address) {
+      setState("not_connected");
+      setBalance(null);
+      setProfile(null);
+      setProfileError(null);
       return;
     }
 
     try {
-      const { isConnected } = await import("@stellar/freighter-api");
-      const isConn = await isConnected();
+      setIsLoadingProfile(true);
+      setProfileError(null);
 
-      if (!isConn || !connected || !address) {
-        setState("not_connected");
-        setBalance(null);
-        return;
-      }
+      // Fetch balance and profile data concurrently
+      const [bal, userProfile] = await Promise.all([
+        fetchXlmBalance(address),
+        profileClient.getProfile(address).catch(() => null),
+      ]);
 
-      const bal = await fetchXlmBalance(address);
       setBalance(bal);
+      setProfile(userProfile);
 
-      // TODO: replace with actual contract call to get_profile(address)
+      if (userProfile && (userProfile.username || userProfile.bio)) {
+        setState("ready");
+      } else {
+        setState("connected_no_profile");
+      }
+    } catch (err: any) {
+      setProfileError(err.message || "Failed to load profile data");
       setState("connected_no_profile");
-    } catch {
-      setState("not_connected");
+      setProfile(null);
+    } finally {
+      setIsLoadingProfile(false);
     }
   }, [address, connected]);
 
@@ -95,12 +118,34 @@ export function useOnboardingWallet() {
 
   const connect = useCallback(async () => {
     await ctxConnect();
-    // detectState will re-run via the effect when `address` / `connected` change
   }, [ctxConnect]);
 
-  const markProfileCreated = useCallback(() => setState("ready"), []);
+  const disconnect = useCallback(() => {
+    setProfile(null);
+    setBalance(null);
+    setProfileError(null);
+    setState("not_connected");
+    if (ctxDisconnect) {
+      ctxDisconnect();
+    }
+  }, [ctxDisconnect]);
 
-  const wallet: WalletInfo = { address, network, balance };
+  const markProfileCreated = useCallback((newProfile?: UserProfile) => {
+    if (newProfile) setProfile(newProfile);
+    setState("ready");
+  }, []);
 
-  return { state, wallet, connect, markProfileCreated, refresh: detectState };
+  const wallet: WalletInfo = { address, network, balance, profile };
+
+  return {
+    state,
+    wallet,
+    profile,
+    isLoadingProfile,
+    profileError,
+    connect,
+    disconnect,
+    markProfileCreated,
+    refresh: detectState,
+  };
 }
