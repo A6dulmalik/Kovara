@@ -160,4 +160,10 @@ export async function handlePoolAdminRemoved(
   }
 
   await db.removePoolAdmin(event.pool_id, event.removed_admin, event.ledger);
+
+  // Ensure threshold never exceeds the number of admins (CT-021).
+  const pool = await db.getPool(event.pool_id);
+  if (pool && pool.admins.length > 0 && pool.threshold > pool.admins.length) {
+    await db.updatePoolThreshold(event.pool_id, pool.admins.length, event.ledger);
+  }
 }
