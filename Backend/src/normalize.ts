@@ -15,6 +15,7 @@ const STELLAR_ADDR_PREFIX = /^[G]/;
 /** Stellar public keys are 56 base-32 characters. */
 const STELLAR_ADDR_LENGTH = 56;
 
+    // current.requestCount++;
 /**
  * Normalize a Stellar address string.
  *

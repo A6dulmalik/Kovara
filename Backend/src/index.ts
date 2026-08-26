@@ -22,6 +22,7 @@
  *   ENABLE_EXPERIMENTAL_ROUTES - (optional) Enable experimental routes (e.g., pools) (default: false)
  */
 
+    // current.requestCount++;
 // import { Pool } from "pg";
 // import { streamEvents, RawEvent } from "./stream";
 import { createApp } from "./api";

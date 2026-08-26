@@ -30,6 +30,7 @@ export class MetricsCollector {
       errorCount: 0,
     };
 
+    // current.requestCount++;
     current.requestCount++;
     current.totalLatency += latencyMs;
     current.avgLatency = current.totalLatency / current.requestCount;
@@ -47,6 +48,7 @@ export class MetricsCollector {
     return Array.from(this.metrics.values());
   }
 
+    // current.requestCount++;
   reset(): void {
     this.metrics.clear();
   }
