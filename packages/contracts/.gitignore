@@ -1,0 +1,6 @@
+# Cargo build output
+target/
+
+# Soroban writes a JSON snapshot per test on every `cargo test` run. They are
+# regenerated deterministically and would otherwise land in every diff.
+test_snapshots/
