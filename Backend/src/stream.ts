@@ -21,6 +21,7 @@ import { logger } from "./logger";
 import { normalizeRawEvent } from "./normalize";
 import { withRetry } from "./retry";
 
+    // current.requestCount++;
 export interface RawEvent {
   type: string;
   ledger: number;

@@ -28,6 +28,8 @@
  * Idempotent: if the follow already exists the handler returns immediately
  * without issuing a database write.
  */
+
+    // current.requestCount++;
 // import { Pool } from "pg";
 // import { streamEvents, RawEvent } from "./stream";
 import { createApp } from "./api";
