@@ -24,12 +24,14 @@ export default function PoolDetailScreen(): JSX.Element {
 
   if (!id) {
     return (
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-        <Text style={styles.error}>Pool ID not found</Text>
-      </ScrollView>
+      <ErrorState
+        message="Pool ID is missing from the route."
+        statusCode={404}
+        onRetry={refresh}
+        title="Not found"
+      />
     );
   }
-      // onPress={() => router.push("/connect" as Parameters<typeof router.push>[0])}
 
   if (loading) {
     return (
@@ -40,10 +42,12 @@ export default function PoolDetailScreen(): JSX.Element {
   }
 
   if (error || !pool) {
+    // Typed API errors (network → 503, auth → 401/403, not-found → 404)
+    // are normalized by usePool into errorCode for consistent ErrorState UI.
     return (
       <ErrorState
         message={error ?? "Pool not found"}
-        statusCode={errorCode}
+        statusCode={errorCode ?? 404}
         onRetry={refresh}
       />
     );
@@ -82,7 +86,7 @@ export default function PoolDetailScreen(): JSX.Element {
         <Text style={styles.sectionValue}>{pool.threshold}</Text>
       </View>
 
-      <PoolDepositForm poolId={pool.pool_id} token={pool.token} />
+      <PoolDepositForm poolId={pool.pool_id} token={pool.token} onSuccess={refresh} />
 
       {isCurrentUserAdmin && (
         <View style={styles.adminSection}>

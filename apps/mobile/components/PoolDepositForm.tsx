@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -19,6 +19,14 @@ interface PoolDepositFormProps {
 export function PoolDepositForm({ poolId, token, onSuccess }: PoolDepositFormProps) {
   const [amount, setAmount] = useState('');
   const { pending, success, error, txHash, deposit, reset } = usePoolDeposit();
+
+  // MO-006: notify parent (e.g. pool detail) so it can refresh query data
+  // after a confirmed deposit and avoid stale balances.
+  useEffect(() => {
+    if (success && onSuccess) {
+      onSuccess();
+    }
+  }, [success, onSuccess]);
 
   const handleDeposit = useCallback(async () => {
     if (!amount.trim()) {
