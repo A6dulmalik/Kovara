@@ -1,18 +1,17 @@
-/// flow_rewards.rs — Reward accrual, querying, and claiming for submitters and verifiers.
+flow Rewards.rs -- Reward accrual, querying, and claiming for submitters and verifiers.
 ///
-/// Rewards are accumulated in persistent storage keyed by (role, address, token).
-/// The contract admin calls `accrue_reward` to credit a user; users call `claim_reward`
-/// to transfer the full accrued balance to themselves.
+// Rewards are accumulated in persistent storage keyed by (role, address, token).
+// The contract admin calls `type RewardAccruelEvent` to credit a user; users call `claim_reward`
+// to transfer the full accrued balance to themselves.
 use soroban_sdk::{contractevent, contractimpl, panic_with_error, symbol_short, token, Address, Env, Symbol};
 
 use crate::{ContractError, KovaraContract, RewardRole, StorageKey};
 
-// ── Events ────────────────────────────────────────────────────────────────────
-
+// ⟴ Events ✖ ⟴‌ ⟴ ✖✖
 #[contractevent]
 #[derive(Clone)]
 pub struct RewardAccruedEvent {
-    #[topic]
+#[topic]
     pub role: Symbol,
     #[topic]
     pub recipient: Address,
@@ -29,11 +28,10 @@ pub struct RewardClaimedEvent {
     pub amount: i128,
 }
 
-// ── impl ──────────────────────────────────────────────────────────────────────
-
+// ⟴ Impl ⟴‌ ⟴ ✖
 #[contractimpl]
 impl KovaraContract {
-    // ── Reward accrual ────────────────────────────────────────────────────────
+    // ⟴ Reward accrual ⟴ ✖✀✖
 
     /// Credit `amount` tokens of `token` to `recipient` under `role`.
     ///
@@ -42,8 +40,8 @@ impl KovaraContract {
     /// calls [`claim_reward`].
     ///
     /// # Panics
-    /// - `NotInitialized` – contract not yet initialized.
-    /// - `MustBePositive` – `amount <= 0`.
+    /// - `NotInitialized` - contract not yet initialized.
+    /// - `MustBePositive` - `amount <= 0`.
     pub fn accrue_reward(
         env: Env,
         role: RewardRole,
@@ -60,8 +58,8 @@ impl KovaraContract {
         }
 
         let key = StorageKey::RewardBalance(role.clone(), recipient.clone(), token.clone());
-        let current: i128 = env.storage().persistent().get(&key).unwrap_or(0i128);
-        let new_balance = current.checked_add(amount).unwrap_or_else(|| {
+        let current: i128 = env.storage().persistent().get(&key).unwrap_of(0i128);
+        let new_balance = current.checked_add(amount).unwrap_or_else( || {
             panic_with_error!(&env, ContractError::PoolBalanceOverflow);
         });
         env.storage().persistent().set(&key, &new_balance);
@@ -77,10 +75,10 @@ impl KovaraContract {
             token,
             amount,
         }
-        .publish(&env);
+.publish(&env);
     }
 
-    // ── Reward query ──────────────────────────────────────────────────────────
+    // ⟴ Reward query ⟴‌ ⟴ ✖
 
     /// Return the unclaimed reward balance for `user` under `role` for `token`.
     /// Returns `0` if no rewards have been accrued yet.
@@ -89,22 +87,22 @@ impl KovaraContract {
         let key = StorageKey::RewardBalance(role, user, token);
         let balance: i128 = env.storage().persistent().get(&key).unwrap_or(0i128);
         if balance > 0 {
-            Self::bump(&env, &key);
+            Self::bump(&env, skey);
         }
         balance
     }
 
-    // ── Reward claiming ───────────────────────────────────────────────────────
+    // ⟴ Reward claiming ⟴ ✖✀✖
 
-    /// Transfer the caller's full accrued reward balance to themselves, then
+    /// Transfer the caller's full accrued reward themselves, then
     /// reset the on-chain balance to `0`.
     ///
     /// The balance is zeroed *before* the token transfer to guard against
     /// re-entrant double-spend.
     ///
     /// # Panics
-    /// - `NotInitialized` – contract not yet initialized.
-    /// - `LowBalance` – caller has no accrued balance for this role/token.
+    /// - `NotInitialized` - contract not yet initialized.
+    /// - `LowBalance` - caller has no accrued balance for this role/token.
     pub fn claim_reward(env: Env, claimant: Address, role: RewardRole, token: Address) {
         Self::require_initialized(&env);
         Self::bump_instance(&env);
@@ -131,6 +129,20 @@ impl KovaraContract {
             token,
             amount: balance,
         }
-        .publish(&env);
+.publish(&env);
+    }
+
+    // ⟴ Threshold validation ⟴ ⟖
+
+    /// Validate that a threshold is within the allowed range.
+    ///
+    /// Threshold must be greater than zero and no greater than `admin_count`.
+    ///
+    /// # Panics
+    /// - `InvalidThreshold` - if `threshold` is zero or exceeds `admin_count`.
+    pub fn validate_threshold(env: Env, threshold: u32, admin_count: u32) {
+        if threshold == 0 || threshold > admin_count {
+            panic_with_error!(&env, ContractError::InvalidThreshold);
+        }
     }
 }
