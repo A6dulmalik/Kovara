@@ -1,6 +1,6 @@
-import { useState, useCallback } from 'react';
-import { getPoolById, type Pool } from '../utils/indexerClient';
 import { useState, useCallback } from "react";
+
+import { getPoolById, type Pool } from "../utils/indexerClient";
 
 import { useNetwork } from "./useNetwork";
 import { useWallet } from "./useWallet";
@@ -155,38 +155,6 @@ export function usePoolDeposit(): UsePoolDepositReturn {
       setSuccess(false);
       setTxHash(undefined);
 
-    try {
-      // 1) Pool existence + token configuration must be verified before signing.
-      const poolCheck = await validatePoolAndToken(poolId, token);
-      if (!poolCheck.ok) {
-        throw new Error(poolCheck.error);
-      }
-
-      const decimals =
-        poolCheck.pool.token_decimals != null &&
-        Number.isInteger(poolCheck.pool.token_decimals)
-          ? poolCheck.pool.token_decimals
-          : DEFAULT_TOKEN_DECIMALS;
-
-      // 2) Enforce token decimals / exact integer units (reject excess precision).
-      const parsed = parseAmountToUnits(amount, decimals);
-      if (!parsed.ok) {
-        throw new Error(parsed.error);
-      }
-
-      // Simulated submit — real signing would use `parsed.units` as the contract amount.
-      await new Promise<void>((resolve) => setTimeout(resolve, 1500));
-
-      const mockTxHash = `0x${Math.random().toString(16).slice(2)}`;
-      setTxHash(mockTxHash);
-      setSuccess(true);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Deposit failed. Please try again.';
-      setError(message);
-    } finally {
-      setPending(false);
-    }
-  }, []);
       try {
         if (!connected || !address) {
           throw new Error("Connect your wallet to deposit into this pool.");

@@ -2,21 +2,28 @@ import React from "react";
 import { Alert } from "react-native";
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
 
-import CreatePostScreen, * as createPostScreen from "./create-post";
+import CreatePostScreen from "./create-post";
+import { submitCreatePost } from "./submitCreatePost";
 import { resolvePendingRequest } from "../../mini-apps/bridge";
 
-const back = jest.fn();
-const push = jest.fn();
-const replace = jest.fn();
-      // onPress={() => router.push("/connect" as Parameters<typeof router.push>[0])}
+// A `jest.mock()` factory is hoisted above these declarations, so it may only
+// reference variables whose names begin with `mock` — Jest rejects anything
+// else to guard against reading an uninitialised binding.
+const mockBack = jest.fn();
+const mockPush = jest.fn();
+const mockReplace = jest.fn();
 
 jest.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ requestId: "req-1" }),
-  useRouter: () => ({ back, push, replace }),
+  useRouter: () => ({ back: mockBack, push: mockPush, replace: mockReplace }),
 }));
 
 jest.mock("../../mini-apps/bridge", () => ({
   resolvePendingRequest: jest.fn(),
+}));
+
+jest.mock("./submitCreatePost", () => ({
+  submitCreatePost: jest.fn(),
 }));
 
 describe("CreatePostScreen", () => {
@@ -25,7 +32,7 @@ describe("CreatePostScreen", () => {
   });
 
   it("keeps the compose view active when submission fails", async () => {
-    jest.spyOn(createPostScreen, "submitCreatePost").mockRejectedValueOnce(new Error("boom"));
+    (submitCreatePost as jest.Mock).mockRejectedValueOnce(new Error("boom"));
     const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
 
     const { getByPlaceholderText, getByText } = render(<CreatePostScreen />);
@@ -35,7 +42,7 @@ describe("CreatePostScreen", () => {
 
     await waitFor(() => expect(alertSpy).toHaveBeenCalled());
 
-    expect(back).not.toHaveBeenCalled();
+    expect(mockBack).not.toHaveBeenCalled();
     expect(resolvePendingRequest).not.toHaveBeenCalled();
     expect(getByPlaceholderText("What's on your mind?").props.value).toBe("Hello world");
     expect(getByText("Post")).toBeTruthy();
