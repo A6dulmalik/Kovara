@@ -256,10 +256,18 @@ export function WalletProvider({ children }: { children: ReactNode }): JSX.Eleme
   }, []);
 
   const importFreighterApi = useCallback(async () => {
-    const loader = new Function("specifier", "return import(specifier)") as (
-      specifier: string
-    ) => Promise<Record<string, unknown>>;
-    return loader("@stellar/freighter-api");
+    // A plain dynamic import, matching `utils/walletAdapter.ts`, which already
+    // imports this module the same way.
+    //
+    // This previously went through `new Function("specifier", "return
+    // import(specifier)")`. That hides the specifier from static analysis —
+    // and from Jest's module registry, so `jest.mock("@stellar/freighter-api")`
+    // could never intercept it and every Freighter test failed against a real
+    // import that cannot resolve under Jest.
+    return (await import("@stellar/freighter-api")) as unknown as Record<
+      string,
+      unknown
+    >;
   }, []);
 
   const requestFreighterAddress = useCallback(async (): Promise<string> => {

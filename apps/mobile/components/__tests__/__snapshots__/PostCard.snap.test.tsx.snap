@@ -118,7 +118,7 @@ exports[`PostCard Snapshots renders default state correctly 1`] = `
           }
         }
       >
-        954d ago
+        778d ago
       </Text>
     </View>
     <Text
@@ -397,7 +397,7 @@ exports[`PostCard Snapshots renders with long content correctly 1`] = `
           }
         }
       >
-        954d ago
+        778d ago
       </Text>
     </View>
     <Text
@@ -676,7 +676,7 @@ exports[`PostCard Snapshots renders with zero likes correctly 1`] = `
           }
         }
       >
-        954d ago
+        778d ago
       </Text>
     </View>
     <Text

@@ -26,6 +26,20 @@ jest.mock("../../context/ToastContext", () => ({
 }));
 
 describe("PostCard Snapshots", () => {
+  // PostCard renders a relative timestamp against `Date.now()`, so with a real
+  // clock the snapshot drifts by a day every day — the committed value read
+  // "954d ago" and the render had reached "1015d ago". Pinning the clock makes
+  // the output a function of the fixture alone.
+  const FIXED_NOW = new Date("2026-01-01T00:00:00Z").getTime();
+
+  beforeAll(() => {
+    jest.spyOn(Date, "now").mockReturnValue(FIXED_NOW);
+  });
+
+  afterAll(() => {
+    jest.restoreAllMocks();
+  });
+
   const defaultPost: Post = {
     id: 1,
     author: "GABCD1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ",
