@@ -1,0 +1,19 @@
+default: build
+
+all: test
+
+deploy-verify:
+	./scripts/deploy-verify-testnet.sh
+
+test: build
+	cargo test
+
+build:
+	stellar contract build
+	@ls -l target/wasm32v1-none/release/*.wasm
+
+fmt:
+	cargo fmt --all
+
+clean:
+	cargo clean
