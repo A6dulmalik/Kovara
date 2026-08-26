@@ -1,4 +1,4 @@
-/**
+/*
  * Typed errors thrown by the indexer client and Kovara SDK helpers.
  */
 export class IndexerError extends Error {
@@ -40,5 +40,44 @@ export function mapHttpError(status: number, bodySnippet?: string): IndexerError
         return new IndexerError(`Server error (${status})${detail}`, status);
       }
       return new IndexerError(`Request failed (${status})${detail}`, status);
+  }
+}
+
+/**
+ * Thrown when a reward amount is invalid (e.g. outside configured bounds).
+ */
+export class RewardAmountError extends Error {
+  readonly amount: number;
+  readonly min?: number;
+  readonly max?: number;
+  readonly cause?: unknown;
+
+  constructor(amount: number, min?: number, max?: number, cause?: unknown) {
+    const range = min !== undefined && max !== undefined ? `( allowed: ${min}-${max})` : "";
+    const message = `Reward amount ${amount} is invalid${range}`;
+    super(message);
+    this.name = "RewardAmountError";
+    this.amount = amount;
+    this.min = min;
+    this.max = max;
+    this.cause = cause;
+  }
+}
+
+/**
+ * Thrown when the treasury balance is insufficient to cover a reward payout.
+ */
+export class InsufficientFundsError extends Error {
+  readonly required: number;
+  readonly available: number;
+  readonly cause?: unknown;
+
+  constructor(required: number, available: number, cause?: unknown) {
+    const message = `Insufficient funds: required ${required}, available ${available}`;
+    super(message);
+    this.name = "InsufficientFundsError";
+    this.required = required;
+    this.available = available;
+    this.cause = cause;
   }
 }
