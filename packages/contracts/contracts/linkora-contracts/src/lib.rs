@@ -6,6 +6,14 @@ use soroban_sdk::{
 
 // ── Storage Key Enum ──────────────────────────────────────────────────────────
 
+/// Distinguishes the two reward roles tracked on-chain by flow_rewards.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RewardRole {
+    Submitter,
+    Verifier,
+}
+
 #[contracttype]
 pub enum StorageKey {
     Post(u64),                 // persistent: post_id -> Post
@@ -19,6 +27,7 @@ pub enum StorageKey {
     UsernameIndex(String), // persistent: username -> owner Address (reverse index for uniqueness)
     TipCooldown(u64, Address), // temporary: (post_id, tipper) -> last-tip ledger sequence number
     Proposal(u64),              // persistent: proposal_id -> Proposal
+    RewardBalance(RewardRole, Address, Address), // persistent: (role, user, token) -> i128
 }
 
 // ── Error Codes ────────────────────────────────────────────────────────────────
@@ -1677,3 +1686,4 @@ impl KovaraContract {
 }
 
 mod test;
+pub mod flow_rewards;
