@@ -86,6 +86,7 @@ export default function PoolDetailScreen(): JSX.Element {
         <Text style={styles.sectionValue}>{pool.threshold}</Text>
       </View>
 
+      <PoolDepositForm poolId={pool.pool_id} token={pool.token} tokenDecimals={pool.token_decimals} />
       <PoolDepositForm poolId={pool.pool_id} token={pool.token} onSuccess={refresh} />
 
       {isCurrentUserAdmin && (

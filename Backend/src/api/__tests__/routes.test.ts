@@ -566,9 +566,41 @@ describe("API Routes", () => {
       expect(res.body).toMatchObject({ code: "NOT_FOUND" });
     });
 
-    it("returns 404 for empty pool id (no route match)", async () => {
-      const res = await request(app).get("/api/pools/");
-      expect(res.status).toBe(404);
+    it("lists pools on GET /api/pools/", async () => {
+      db.listPools.mockResolvedValueOnce({
+        pools: [
+          {
+            pool_id: "pool1",
+            token: "GTOKEN",
+            balance: BigInt(1000),
+            admins: ["GADMIN1"],
+            threshold: 1,
+            created_ledger: 50,
+            updated_ledger: 100,
+          },
+        ],
+        total: 1,
+      });
+      db.getTokenMetadata.mockResolvedValueOnce({
+        name: "TestToken",
+        symbol: "TST",
+        decimals: 7,
+      });
+
+      const res = await request(app).get("/api/pools/?limit=10&offset=0");
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        total: 1,
+        limit: 10,
+        offset: 0,
+        has_more: false,
+      });
+      expect(res.body.pools).toHaveLength(1);
+      expect(res.body.pools[0]).toMatchObject({
+        pool_id: "pool1",
+        token: "GTOKEN",
+        token_symbol: "TST",
+      });
     });
   });
 

@@ -46,10 +46,15 @@ export interface FollowingResponse extends PaginationResponse {
   prev_offset: number | null;
 }
 
-export interface PoolResponse extends Pool {
+export interface PoolResponse extends PoolRecord {
   token_name?: string;
   token_symbol?: string;
   token_decimals?: number;
+}
+
+export interface PoolListResponse extends PaginationResponse {
+  pools: PoolResponse[];
+  total: number;
 }
 
 export interface SearchPost {
