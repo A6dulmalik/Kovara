@@ -354,3 +354,12 @@ MIT © 2025 Kōvara Contributors
 <p align="center">
   Built on <strong>Stellar</strong> · Powered by <strong>Soroban</strong> · Open data for the world 🌍
 </p>
+
+## Frontend Routes Index
+| Route | Component / View | Description |
+| :--- | :--- | :--- |
+| `/country` | CountryIndexView | Regional and country-specific configurations |
+| `/history` | HistoryIndexView | Historical user activity and transaction logs |
+| `/basket` | BasketIndexView | Active items and checkout basket management |
+| `/methodology` | MethodologyIndexView | Documentation and formula explanations |
+| `/rewards` | RewardsIndexView | User rewards, staking, and bonus tracking |
