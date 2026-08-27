@@ -30,3 +30,22 @@ describe("007_follows_pagination_index.sql (BA-018 #453)", () => {
     expect(sql).toMatch(/CREATE INDEX IF NOT EXISTS/i);
   });
 });
+
+describe("008_tips_activity_indexes.sql (BA-019 #454)", () => {
+  const sql = readMigration("008_tips_activity_indexes.sql");
+
+  it("indexes tips by post_id", () => {
+    expect(sql).toMatch(/CREATE INDEX IF NOT EXISTS idx_tips_post_id\s+ON tips\s*\(\s*post_id\s*\)/i);
+  });
+
+  it("indexes tips by tipper", () => {
+    expect(sql).toMatch(/CREATE INDEX IF NOT EXISTS idx_tips_tipper\s+ON tips\s*\(\s*tipper\s*\)/i);
+  });
+
+  it("does not use invalid MySQL-style inline INDEX table items", () => {
+    // The bug this migration works around: `CREATE TABLE ... (INDEX name (col))`
+    // is not valid PostgreSQL syntax. Every index here must be a standalone
+    // CREATE INDEX statement.
+    expect(sql).not.toMatch(/^\s*INDEX\s+\w+\s*\(/im);
+  });
+});
