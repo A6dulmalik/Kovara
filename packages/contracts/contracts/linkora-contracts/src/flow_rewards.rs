@@ -79,6 +79,7 @@ impl KovaraContract {
         token: Address,
         amount: i128,
     ) {
+        Self::require_not_paused(&env);
         Self::require_initialized(&env);
         Self::bump_instance(&env);
         Self::require_admin(&env);
@@ -167,6 +168,7 @@ impl KovaraContract {
     /// - `NotInitialized` - contract not yet initialized.
     /// - `LowBalance` - caller has no accrued balance for this role/token.
     pub fn claim_reward(env: Env, claimant: Address, role: RewardRole, token: Address) {
+        Self::require_not_paused(&env);
         Self::require_initialized(&env);
         Self::bump_instance(&env);
         claimant.require_auth();

@@ -81,6 +81,8 @@ pub enum ContractError {
     ContentTooLong = 42,
     TreasuryCannotBeContract = 43,
     NoOpFeeUpdate = 44,
+    InvalidWasmHash = 43,
+    Paused = 45,
     InvalidWasmHash = 45,
     RoundAlreadyExists = 46,
     RoundNotFound = 47,
@@ -100,6 +102,7 @@ const FEE_BPS: Symbol = symbol_short!("FEE_BPS");
 const INITIALIZED: Symbol = symbol_short!("INIT");
 const TIP_COOLDOWN_WINDOW: Symbol = symbol_short!("TIP_CD_W");
 const PROPOSAL_CT: Symbol = symbol_short!("PROP_CT");
+const PAUSED: Symbol = symbol_short!("PAUSED");
 
 // ── TTL Constants ─────────────────────────────────────────────────────────────
 //
@@ -371,6 +374,18 @@ pub struct TreasuryUpdatedEvent {
     pub name: Symbol,
     pub old_treasury: Address,
     pub new_treasury: Address,
+}
+
+#[contractevent]
+#[derive(Clone)]
+pub struct PauseEvent {
+    pub admin: Address,
+}
+
+#[contractevent]
+#[derive(Clone)]
+pub struct UnpauseEvent {
+    pub admin: Address,
 }
 // ── Contract ──────────────────────────────────────────────────────────────────
 
@@ -944,6 +959,7 @@ impl KovaraContract {
     /// - `TipCooldownNotExpired` if a tip was made within the cooldown window.
     /// - `TreasuryNotSet` if the treasury address has not been configured.
     pub fn tip(env: Env, tipper: Address, post_id: u64, token: Address, amount: i128) {
+        Self::require_not_paused(&env);
         Self::require_initialized(&env);
         Self::bump_instance(&env);
         if amount <= 0 {
@@ -1093,6 +1109,7 @@ impl KovaraContract {
         token: Address,
         amount: i128,
     ) {
+        Self::require_not_paused(&env);
         Self::require_initialized(&env);
         Self::bump_instance(&env);
         if amount <= 0 {
@@ -1138,6 +1155,7 @@ impl KovaraContract {
         amount: i128,
         recipient: Address,
     ) {
+        Self::require_not_paused(&env);
         Self::require_initialized(&env);
         Self::bump_instance(&env);
         if amount <= 0 {
@@ -1466,6 +1484,7 @@ impl KovaraContract {
     /// unique signers reaches the pool threshold the proposal is executed
     /// automatically and funds are transferred to `recipient`.
     pub fn sign_proposal(env: Env, signer: Address, proposal_id: u64) {
+        Self::require_not_paused(&env);
         Self::require_initialized(&env);
         Self::bump_instance(&env);
         signer.require_auth();
@@ -1695,6 +1714,35 @@ impl KovaraContract {
         env.storage()
             .instance()
             .extend_ttl(LEDGER_THRESHOLD, LEDGER_BUMP);
+    }
+
+    pub fn pause(env: Env) {
+        Self::require_initialized(&env);
+        Self::bump_instance(&env);
+        Self::require_admin(&env);
+        env.storage().instance().set(&PAUSED, &true);
+        let admin: Address = env.storage().instance().get(&ADMIN).unwrap();
+        PauseEvent { admin }.publish(&env);
+    }
+
+    pub fn unpause(env: Env) {
+        Self::require_initialized(&env);
+        Self::bump_instance(&env);
+        Self::require_admin(&env);
+        env.storage().instance().set(&PAUSED, &false);
+        let admin: Address = env.storage().instance().get(&ADMIN).unwrap();
+        UnpauseEvent { admin }.publish(&env);
+    }
+
+    pub fn is_paused(env: Env) -> bool {
+        Self::require_initialized(&env);
+        env.storage().instance().get(&PAUSED).unwrap_or(false)
+    }
+
+    pub(crate) fn require_not_paused(env: &Env) {
+        if env.storage().instance().get(&PAUSED).unwrap_or(false) {
+            panic_with_error!(env, ContractError::Paused);
+        }
     }
 }
 
