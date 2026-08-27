@@ -13,6 +13,7 @@
  */
 
 import { Database } from "../db";
+import { isValidStellarAddress, normalizeStellarAddress } from "../utils/stellar-address.utils";
 
 // CT-026: hard cap for a single reward withdrawal. Prevents draining the
 // treasury through an unbounded reward payout.
@@ -46,13 +47,7 @@ export interface PoolAdminAddedEvent {
   new_admin: string;
   ledger: number;
 }
-/**
- * Handle a Follow event.
- *
- * Inserts a directed edge (follower → followee) into the follow graph.
- * Idempotent: if the follow already exists the handler returns immediately
- * without issuing a database write.
- */
+
 export interface PoolAdminRemovedEvent {
   pool_id: string;
   removed_admin: string;
@@ -65,11 +60,34 @@ function validatePoolId(poolId: string): void {
   }
 }
 
+function validateAdminAddress(admin: string): string {
+  if (typeof admin !== "string" || admin.trim() === "") {
+    throw new Error("Invalid admin address: must be a non-empty string");
+  }
+  const normalized = normalizeStellarAddress(admin);
+  if (!isValidStellarAddress(normalized)) {
+    throw new Error(`Invalid Stellar address: ${admin}`);
+  }
+  return normalized;
+}
+
+function validateAdmins(admins: string[]): string[] {
+  if (!Array.isArray(admins) || admins.length === 0) {
+    throw new Error("PoolCreated event must have at least one admin");
+  }
+  const normalizedAdmins = admins.map(validateAdminAddress);
+  const uniqueAdmins = new Set(normalizedAdmins);
+  if (uniqueAdmins.size !== normalizedAdmins.length) {
+    throw new Error("PoolCreated event admins must not contain duplicates");
+  }
+  return normalizedAdmins;
+}
+
 /**
  * Handle a PoolCreated event.
  *
  * Inserts the pool row with an initial balance of 0.  Safe to replay:
- * insertPool must be implemented as an INSERT '… ON CONFLICT DO NOTHING
+ * insertPool must be implemented as an INSERT … ON CONFLICT DO NOTHING
  * (or equivalent) so duplicate events are silently ignored.
  */
 export async function handlePoolCreated(db: Database, event: PoolCreatedEvent): Promise<void> {
@@ -77,10 +95,8 @@ export async function handlePoolCreated(db: Database, event: PoolCreatedEvent): 
   if (!event.token) {
     throw new Error("PoolCreated event missing required field: token");
   }
-  if (!Array.isArray(event.admins) || event.admins.length === 0) {
-    throw new Error("PoolCreated event must have at least one admin");
-  }
-  if (event.threshold < 1 || event.threshold > event.admins.length) {
+  const admins = validateAdmins(event.admins);
+  if (!Number.isInteger(event.threshold) || event.threshold < 1 || event.threshold > admins.length) {
     throw new Error("PoolCreated event threshold must be between 1 and admins.length");
   }
 
@@ -88,7 +104,7 @@ export async function handlePoolCreated(db: Database, event: PoolCreatedEvent): 
     pool_id: event.pool_id,
     token: event.token,
     balance: BigInt(0),
-    admins: event.admins,
+    admins: admins,
     threshold: event.threshold,
     created_ledger: event.ledger,
     updated_ledger: event.ledger,
@@ -137,25 +153,31 @@ export async function handlePoolWithdraw(db: Database, event: PoolWithdrawEvent)
  * Handle a PoolAdminAdded event.
  *
  * Appends a new admin address to the pool's admins list.
- * Idempotent: if the admin already exists the database layer must silently
- * skip the insertion (e.g. INSERT … ON CONFLICT DO NOTHING).
+ * Throws if the admin already exists or the address is invalid.
  */
 export async function handlePoolAdminAdded(
   db: Database,
   event: PoolAdminAddedEvent
 ): Promise<void> {
   validatePoolId(event.pool_id);
-  if (!event.new_admin) {
-    throw new Error("PoolAdminAdded event missing required field: new_admin");
+  const normalizedAdmin = validateAdminAddress(event.new_admin);
+
+  const pool = await db.getPool(event.pool_id);
+  if (!pool) {
+    throw new Error(`Pool not found: $event.pool_id`);
+  }
+  if (pool.admins.some((admin) => normalizeStellarAddress(admin) === normalizedAdmin)) {
+    throw new Error(`Admin already exists in pool ${event.pool_id}: ${event.new_admin}`);
   }
 
-  await db.addPoolAdmin(event.pool_id, event.new_admin, event.ledger);
+  await db.addPoolAdmin(event.pool_id, normalizedAdmin, event.ledger);
 }
 
 /**
  * Handle a PoolAdminRemoved event.
  *
  * Removes an admin address from the pool's admins list.
+ * Throws if removing the admin would drop the number of admins below the threshold.
  * Idempotent: if the admin does not exist the database layer must silently
  * skip the deletion.
  */
@@ -163,18 +185,22 @@ export async function handlePoolAdminRemoved(
   db: Database,
   event: PoolAdminRemovedEvent
 ): Promise<void> {
-  if (!event.pool_id) {
-    throw new Error("PoolAdminRemoved event missing required field: pool_id");
-  }
-  if (!event.removed_admin) {
-    throw new Error("PoolAdminRemoved event missing required field: removed_admin");
-  }
+  validatePoolId(event.pool_id);
+  const normalizedAdmin = validateAdminAddress(event.removed_admin);
 
-  await db.removePoolAdmin(event.pool_id, event.removed_admin, event.ledger);
-
-  // Ensure threshold never exceeds the number of admins (CT-021).
   const pool = await db.getPool(event.pool_id);
-  if (pool && pool.admins.length > 0 && pool.threshold > pool.admins.length) {
-    await db.updatePoolThreshold(event.pool_id, pool.admins.length, event.ledger);
+  if (!pool) {
+    throw new Error(`Pool not found: $event.pool_id`);
   }
+
+  const remainingAdmins = pool.admins.filter(
+    (admin) => normalizeStellarAddress(admin) !== normalizedAdmin
+  );
+  if (pool.threshold > remainingAdmins.length) {
+    throw new Error(
+      `Cannot remove admin: pool threshold ${pool.threshold} exceeds remaining admin count ${remainingAdmins.length}`
+    );
+  }
+
+  await db.removePoolAdmin(event.pool_id, normalizedAdmin, event.ledger);
 }
