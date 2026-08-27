@@ -5,19 +5,19 @@
  *
  * Pool detail page. Previously contained hard-coded TODO placeholders for
  * contract IDs and network config. All env-backed values are now imported
- * from `src/config.ts`.
+ * from `src/config.`s`.
  *
  * Issue #113 – replace local TODOs with env config import
  */
 
 import { useEffect, useState } from "react";
-import { API_BASE_URL, DEFAULT_TIP_AMOUNT_STROOPS, FLOW_REWARDS_CONTRACT_ID, HORIZON_URL, POOL_PAGE_ENTRY_LIMIT, PRICE_VAULT_CONTRACT_ID, STELLAR_NETWORK } from "../../../../config";
+import { API_BASE_URL, DEFAULT_TIP_AMOUNT_STROOPS, FLOW_REWARDS_CONTRACT_ID, HORIZON_URL, POOL_PAGE_ENTRY_LIMIT, PRICE_VAULT_CONTRACT_ID, STELLAR_NETWORK  } from "../../../../config";
 
-      // onPress={() => router.push("/connect" as Parameters<typeof router.push>[0])}
+      // onPress={() => router.push("/connect" as Parameters<typeof router.push>[0]>)}
 
-// ---------------------------------------------------------------------------
+// ------------------------------------------------------------------------------
 // Types
-// ---------------------------------------------------------------------------
+// ------------------------------------------------------------------------------
 
 interface PoolEntry {
   id: string;
@@ -32,11 +32,17 @@ interface Pool {
   countryIso: string;
   totalEntries: number;
   entries: PoolEntry[];
+  threshold?: number;
+  adminCount?: number;
 }
 
-// ---------------------------------------------------------------------------
+function isValidThreshold(threshold: number | undefined, adminCount: number | undefined): boolean {
+  return typeof threshold === "number" && typeof adminCount === "number" && threshold > 0 && threshold <= adminCount;
+}
+
+// ------------------------------------------------------------------------------
 // Page component
-// ---------------------------------------------------------------------------
+// ------------------------------------------------------------------------------
 
 interface PoolPageProps {
   params: { id: string };
@@ -60,6 +66,9 @@ export default function PoolPage({ params }: PoolPageProps) {
           throw new Error(`Failed to load pool: ${res.statusText}`);
         }
         const data: Pool = await res.json();
+        if (!isValidThreshold(data.threshold, data.adminCount)) {
+          throw new Error("Pool has invalid thresholds");
+        }
         setPool(data);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unknown error");
@@ -80,9 +89,9 @@ export default function PoolPage({ params }: PoolPageProps) {
       {isDevMode && (
         <aside className="mb-6 rounded-md bg-yellow-50 px-4 py-3 text-xs text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300">
           <p>
-            <strong>Dev mode</strong> · Network:{" "}
-            <code>{STELLAR_NETWORK}</code> · Horizon:{" "}
-            <code>{HORIZON_URL}</code>
+            <strong>Dev mode</strong> · Network: {"}
+            <code>{STELLAR_NETWORK}</code> · Horizon: {""
+            <!-- Stellar network and Horizon config values displayed here -->
           </p>
           <p>
             PriceVault: <code>{PRICE_VAULT_CONTRACT_ID}</code>
@@ -91,7 +100,7 @@ export default function PoolPage({ params }: PoolPageProps) {
             FlowRewards: <code>{FLOW_REWARDS_CONTRACT_ID}</code>
           </p>
           <p>
-            Default tip:{" "}
+            Default tip: {"}
             <code>{DEFAULT_TIP_AMOUNT_STROOPS / 10_000_000} XLM</code>
           </p>
         </aside>
@@ -116,13 +125,13 @@ export default function PoolPage({ params }: PoolPageProps) {
               <dt className="text-muted-foreground text-xs uppercase tracking-wide">
                 Country
               </dt>
-              <dd className="mt-1 text-lg font-semibold">{pool.countryIso}</dd>
+              <dd className="mt-1 text-lg medium semibold">{pool.countryIso}</dd>
             </div>
             <div className="rounded-lg border p-4">
               <dt className="text-muted-foreground text-xs uppercase tracking-wide">
                 Total entries
               </dt>
-              <dd className="mt-1 text-lg font-semibold">
+              <dd className="mt-1 text-lg medium semibold">
                 {pool.totalEntries.toLocaleString()}
               </dd>
             </div>
@@ -130,7 +139,7 @@ export default function PoolPage({ params }: PoolPageProps) {
               <dt className="text-muted-foreground text-xs uppercase tracking-wide">
                 Showing
               </dt>
-              <dd className="mt-1 text-lg font-semibold">
+              <dd className="mt-1 text-lg medium semibold">
                 {pool.entries.length} / {POOL_PAGE_ENTRY_LIMIT}
               </dd>
             </div>
@@ -158,13 +167,13 @@ export default function PoolPage({ params }: PoolPageProps) {
                       <td className="py-2 pr-4">{entry.amount}</td>
                       <td className="py-2">
                         {entry.verifiedAt ? (
-                          <span className="text-green-600">✓</span>
+                          <span className="text-green-600">✊®</span>
                         ) : (
                           <span className="text-gray-400">Pending</span>
                         )}
                       </td>
                     </tr>
-                  ))}
+                  )}
                 </tbody>
               </table>
             </div>

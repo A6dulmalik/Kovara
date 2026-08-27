@@ -921,6 +921,19 @@ fn test_like_post() {
 }
 
 #[test]
+#[should_panic(expected = "Error(Contract, #45)")]
+fn test_like_own_post_panics() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_contract(&env);
+
+    let author = Address::generate(&env);
+    let post_id = client.create_post(&author, &String::from_str(&env, "Like test"));
+
+    client.like_post(&author, &post_id);
+}
+
+#[test]
 fn test_like_post_emits_event_on_first_like() {
     let env = Env::default();
     env.mock_all_auths();
@@ -4586,4 +4599,283 @@ fn test_duplicate_signers_cannot_bypass_withdrawal_threshold() {
     let duplicate_signers = vec![&env, admins.get(0).unwrap(), admins.get(0).unwrap()];
 
     client.pool_withdraw(&duplicate_signers, &pool_id, &10, &recipient);
+}
+
+// ── flow_rewards tests ────────────────────────────────────────────────────────
+
+#[test]
+fn test_accrue_and_query_submitter_reward() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(KovaraContract, ());
+    let client = KovaraContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    client.initialize(&admin, &treasury, &0);
+
+    let submitter = Address::generate(&env);
+    let token = make_token(&env);
+
+    // Initially zero
+    assert_eq!(
+        client.get_reward_balance(&crate::RewardRole::Submitter, &submitter, &token),
+        0
+    );
+
+    // Accrue 500
+    client.accrue_reward(&crate::RewardRole::Submitter, &submitter, &token, &500);
+    assert_eq!(
+        client.get_reward_balance(&crate::RewardRole::Submitter, &submitter, &token),
+        500
+    );
+
+    // Accrue another 300 — should accumulate, not overwrite
+    client.accrue_reward(&crate::RewardRole::Submitter, &submitter, &token, &300);
+    assert_eq!(
+        client.get_reward_balance(&crate::RewardRole::Submitter, &submitter, &token),
+        800
+    );
+}
+
+#[test]
+fn test_accrue_and_query_verifier_reward() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(KovaraContract, ());
+    let client = KovaraContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    client.initialize(&admin, &treasury, &0);
+
+    let verifier = Address::generate(&env);
+    let token = make_token(&env);
+
+    client.accrue_reward(&crate::RewardRole::Verifier, &verifier, &token, &1000);
+    assert_eq!(
+        client.get_reward_balance(&crate::RewardRole::Verifier, &verifier, &token),
+        1000
+    );
+}
+
+#[test]
+fn test_submitter_and_verifier_balances_are_independent() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(KovaraContract, ());
+    let client = KovaraContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    client.initialize(&admin, &treasury, &0);
+
+    let user = Address::generate(&env);
+    let token = make_token(&env);
+
+    client.accrue_reward(&crate::RewardRole::Submitter, &user, &token, &200);
+    client.accrue_reward(&crate::RewardRole::Verifier, &user, &token, &350);
+
+    assert_eq!(
+        client.get_reward_balance(&crate::RewardRole::Submitter, &user, &token),
+        200
+    );
+    assert_eq!(
+        client.get_reward_balance(&crate::RewardRole::Verifier, &user, &token),
+        350
+    );
+}
+
+#[test]
+fn test_claim_reward_transfers_tokens_and_resets_balance() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(KovaraContract, ());
+    let client = KovaraContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    client.initialize(&admin, &treasury, &0);
+
+    let submitter = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+
+    // Mint tokens to the *contract* so it can pay out rewards
+    let token_id = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token_addr = token_id.address();
+    StellarAssetClient::new(&env, &token_addr).mint(&contract_id, &5_000);
+
+    client.accrue_reward(&crate::RewardRole::Submitter, &submitter, &token_addr, &750);
+
+    // Balance before claim
+    assert_eq!(TokenClient::new(&env, &token_addr).balance(&submitter), 0);
+
+    client.claim_reward(&submitter, &crate::RewardRole::Submitter, &token_addr);
+
+    // Tokens transferred
+    assert_eq!(TokenClient::new(&env, &token_addr).balance(&submitter), 750);
+
+    // Storage reset to zero
+    assert_eq!(
+        client.get_reward_balance(&crate::RewardRole::Submitter, &submitter, &token_addr),
+        0
+    );
+}
+
+#[test]
+fn test_claim_reward_twice_only_pays_once() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(KovaraContract, ());
+    let client = KovaraContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    client.initialize(&admin, &treasury, &0);
+
+    let verifier = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token_addr = token_id.address();
+    StellarAssetClient::new(&env, &token_addr).mint(&contract_id, &5_000);
+
+    client.accrue_reward(&crate::RewardRole::Verifier, &verifier, &token_addr, &400);
+    client.claim_reward(&verifier, &crate::RewardRole::Verifier, &token_addr);
+    assert_eq!(TokenClient::new(&env, &token_addr).balance(&verifier), 400);
+
+    // Second claim with zero balance should panic
+    let result = std::panic::catch_unwind(|| {
+        client.claim_reward(&verifier, &crate::RewardRole::Verifier, &token_addr);
+    });
+    assert!(result.is_err(), "second claim must fail");
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #23)")]
+fn test_claim_with_no_balance_panics() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(KovaraContract, ());
+    let client = KovaraContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    client.initialize(&admin, &treasury, &0);
+
+    let user = Address::generate(&env);
+    let token = make_token(&env);
+
+    // No rewards accrued — should panic with LowBalance (#23)
+    client.claim_reward(&user, &crate::RewardRole::Submitter, &token);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #20)")]
+fn test_accrue_zero_amount_panics() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(KovaraContract, ());
+    let client = KovaraContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    client.initialize(&admin, &treasury, &0);
+
+    let user = Address::generate(&env);
+    let token = make_token(&env);
+
+    // amount = 0 should panic with MustBePositive (#20)
+    client.accrue_reward(&crate::RewardRole::Submitter, &user, &token, &0);
+}
+
+// ── CT-017: Deterministic slashing invariants ────────────────────────────────
+
+#[test]
+fn test_pool_slash_evidence_authority_amount_destination_conservation() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, pool_id, token, admins) = setup_pool(&env, 3, 2, 1_000);
+    let treasury = client.get_treasury().unwrap();
+    let signers = vec![&env, admins.get(0).unwrap(), admins.get(1).unwrap()];
+    let evidence = BytesN::from_array(&env, &[0x5a; 32]);
+
+    let pool_before = client.get_pool(&pool_id).unwrap().balance;
+    let treasury_before = TokenClient::new(&env, &token).balance(&treasury);
+
+    client.pool_slash(&signers, &pool_id, &evidence, &250);
+
+    let pool_after = client.get_pool(&pool_id).unwrap().balance;
+    let treasury_after = TokenClient::new(&env, &token).balance(&treasury);
+
+    assert_eq!(pool_before, 1_000);
+    assert_eq!(pool_after, 750);
+    assert_eq!(treasury_after, treasury_before + 250);
+    assert_eq!(
+        pool_after + treasury_after,
+        pool_before + treasury_before,
+        "slashing must conserve total pooled and treasury tokens"
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #22)")]
+fn test_pool_slash_rejects_unauthorized_authority() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, pool_id, _, admins) = setup_pool(&env, 3, 2, 500);
+    let outsider = Address::generate(&env);
+    let signers = vec![&env, admins.get(0).unwrap(), outsider];
+    let evidence = BytesN::from_array(&env, &[1u8; 32]);
+
+    client.pool_slash(&signers, &pool_id, &evidence, &10);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #21)")]
+fn test_pool_slash_requires_threshold_signers() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, pool_id, _, admins) = setup_pool(&env, 3, 2, 500);
+    let signers = vec![&env, admins.get(0).unwrap()];
+    let evidence = BytesN::from_array(&env, &[2u8; 32]);
+
+    client.pool_slash(&signers, &pool_id, &evidence, &10);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #20)")]
+fn test_pool_slash_zero_amount_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, pool_id, _, admins) = setup_pool(&env, 1, 1, 500);
+    let signers = vec![&env, admins.get(0).unwrap()];
+    let evidence = BytesN::from_array(&env, &[3u8; 32]);
+
+    client.pool_slash(&signers, &pool_id, &evidence, &0);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #23)")]
+fn test_pool_slash_exceeds_balance_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, pool_id, _, admins) = setup_pool(&env, 1, 1, 100);
+    let signers = vec![&env, admins.get(0).unwrap()];
+    let evidence = BytesN::from_array(&env, &[4u8; 32]);
+
+    client.pool_slash(&signers, &pool_id, &evidence, &101);
+}
+
+#[test]
+fn test_pool_slash_same_evidence_cannot_be_replayed() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, pool_id, _, admins) = setup_pool(&env, 3, 2, 500);
+    let signers = vec![&env, admins.get(0).unwrap(), admins.get(1).unwrap()];
+    let evidence = BytesN::from_array(&env, &[9u8; 32]);
+
+    client.pool_slash(&signers, &pool_id, &evidence, &50);
+
+    let replay = std::panic::catch_unwind(|| {
+        client.pool_slash(&signers, &pool_id, &evidence, &50);
+    });
+    assert!(replay.is_err(), "same evidence must not be slashable twice");
+
+    // A separate evidence incident is still slashable.
+    let evidence2 = BytesN::from_array(&env, &[10u8; 32]);
+    client.pool_slash(&signers, &pool_id, &evidence2, &25);
+    assert_eq!(client.get_pool(&pool_id).unwrap().balance, 425);
 }

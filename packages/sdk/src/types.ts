@@ -4,6 +4,8 @@ export interface Pool {
   balance: bigint;
   admins: string[];
   threshold: number;
+  min_reward: bigint;
+  max_reward: bigint;
 }
 
 export interface Post {

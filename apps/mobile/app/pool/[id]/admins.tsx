@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState } from("react";
 import {
   Alert,
   Pressable,
@@ -9,7 +9,7 @@ import {
   View,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-      // onPress={() => router.push("/connect" as Parameters<typeof router.push>[0])}
+      // onPress={() => router.push("/connect" as Parameters<typeof router.push>[0]>)}
 
 import {
   addPoolAdmin,
@@ -18,11 +18,11 @@ import {
   removePoolAdmin,
   updatePoolThreshold,
   usePoolRecord,
-} from "../../../utils/poolStore";
-import { useWallet } from "../../../hooks/useWallet";
+} from "../../utils/poolStore";
+import { useWallet } from "../../hooks/useWallet";
 
 type PendingAction =
-  | {
+  {
       kind: "add";
       value: string;
       approvals: string[];
@@ -38,7 +38,7 @@ type PendingAction =
       approvals: string[];
     };
 
-export default function PoolAdminsScreen(): JSX.Element {
+export default function PoolAdminsScreen(): Js.Element {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const poolId = Array.isArray(id) ? id[0] : id ?? "";
@@ -57,7 +57,7 @@ export default function PoolAdminsScreen(): JSX.Element {
 
   const signerSummary = useMemo(
     () =>
-      pool.admins.map((admin) => ({
+      pool.admins.map((admin) =>({
         address: admin,
         approved: pendingApprovals.includes(admin),
       })),
@@ -170,8 +170,8 @@ export default function PoolAdminsScreen(): JSX.Element {
     const value = thresholdInput.trim();
     const nextThreshold = Number(value);
 
-    if (!Number.isFinite(nextThreshold) || nextThreshold < 1) {
-      setMessage("Threshold must be at least 1.");
+    if (!Number.isInteger(nextThreshold) || nextThreshold < 1 || nextThreshold > pool.admins.length) {
+      setMessage("Threshold must be an integer between 1 and the admin count.");
       return;
     }
 
@@ -195,7 +195,7 @@ export default function PoolAdminsScreen(): JSX.Element {
             </Text>
             <Text style={styles.adminTag}>{admin === connectedAddress ? "Connected" : "Admin"}</Text>
           </View>
-        ))}
+        )))
         <Text style={styles.meta}>Threshold: {pool.threshold} signatures required</Text>
       </View>
 
@@ -256,7 +256,7 @@ export default function PoolAdminsScreen(): JSX.Element {
               {signerSummary.map((signer) => (
                 <Pressable
                   key={signer.address}
-                  onPress={() => toggleSigner(signer.address)}
+                  onPress={() => toggleSigner(signer.address)
                   style={styles.signerRow}
                   accessibilityRole="button"
                   accessibilityLabel={`Toggle approval for ${signer.address}`}
@@ -268,7 +268,7 @@ export default function PoolAdminsScreen(): JSX.Element {
                     {signer.approved ? "Signed" : "Pending"}
                   </Text>
                 </Pressable>
-              ))}
+              ))
             </View>
 
             <View style={styles.buttonStack}>
@@ -415,81 +415,76 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    marginBottom: 10,
   },
   pendingKind: {
-    color: "#e0e7ff",
-    fontSize: 17,
-    fontWeight: "800",
-    marginBottom: 4,
+    color: "#e2e8f0",
+    fontSize: 14,
+    fontWeight: "700",
+    marginTop: 8,
   },
   pendingValue: {
-    color: "#cbd5e1",
-    fontSize: 12,
+    color: "#94a3b8",
+    fontSize: 13,
     fontFamily: "monospace",
-    marginBottom: 12,
+    marginTop: 4,
   },
   signerList: {
-    marginBottom: 12,
+    marginTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#1f2937",
   },
   signerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: "#1f2937",
   },
   signerAddress: {
     color: "#e2e8f0",
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: "monospace",
   },
   approved: {
-    color: "#86efac",
-    fontSize: 12,
-    fontWeight: "800",
+    color: "#34d399",
   },
   pending: {
-    color: "#fcd34d",
-    fontSize: 12,
-    fontWeight: "800",
+    color: "#94a3b8",
   },
   buttonStack: {
+    marginTop: 12,
     gap: 10,
   },
   primaryButton: {
-    minHeight: 44,
+    minHeight: 48,
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#6366f1",
+    marginBottom: 6,
+  },
+  buttonDisabled: {
+    backgroundColor: "#334155",
+    opacity: 0.5,
   },
   primaryButtonText: {
     color: "#ffffff",
-    fontSize: 14,
-    fontWeight: "800",
-  },
-  buttonDisabled: {
-    opacity: 0.45,
-  },
-  message: {
-    color: "#cbd5e1",
-    fontSize: 13,
-    textAlign: "center",
-    marginBottom: 12,
+    fontWeight: "700",
   },
   linkButton: {
-    minHeight: 44,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#334155",
+    marginTop: 16,
     alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#0f172a",
   },
   linkButtonText: {
-    color: "#e2e8f0",
+    color: "#818cf8",
     fontSize: 14,
-    fontWeight: "700",
+    fontWeight: "600",
+  },
+  message: {
+    color: "#f59e0b",
+    fontSize: 13,
+    marginTop: 12,
+    textAlign: "center",
   },
 });

@@ -13,6 +13,11 @@
  */
 
 import { Database } from "../db";
+import { isValidStellarAddress, normalizeStellarAddress } from "../utils/stellar-address.utils";
+
+// CT-026: hard cap for a single reward withdrawal. Prevents draining the
+// treasury through an unbounded reward payout.
+const MAX_REWARD_AMOUNT: bigint = BigInt(1_000_000);
 
 export interface PoolCreatedEvent {
   pool_id: string;
@@ -42,13 +47,7 @@ export interface PoolAdminAddedEvent {
   new_admin: string;
   ledger: number;
 }
-/**
- * Handle a Follow event.
- *
- * Inserts a directed edge (follower → followee) into the follow graph.
- * Idempotent: if the follow already exists the handler returns immediately
- * without issuing a database write.
- */
+
 export interface PoolAdminRemovedEvent {
   pool_id: string;
   removed_admin: string;
@@ -59,6 +58,29 @@ function validatePoolId(poolId: string): void {
   if (!poolId || typeof poolId !== "string" || poolId.trim() === "") {
     throw new Error("Invalid pool ID: must be a non-empty string");
   }
+}
+
+function validateAdminAddress(admin: string): string {
+  if (typeof admin !== "string" || admin.trim() === "") {
+    throw new Error("Invalid admin address: must be a non-empty string");
+  }
+  const normalized = normalizeStellarAddress(admin);
+  if (!isValidStellarAddress(normalized)) {
+    throw new Error(`Invalid Stellar address: ${admin}`);
+  }
+  return normalized;
+}
+
+function validateAdmins(admins: string[]): string[] {
+  if (!Array.isArray(admins) || admins.length === 0) {
+    throw new Error("PoolCreated event must have at least one admin");
+  }
+  const normalizedAdmins = admins.map(validateAdminAddress);
+  const uniqueAdmins = new Set(normalizedAdmins);
+  if (uniqueAdmins.size !== normalizedAdmins.length) {
+    throw new Error("PoolCreated event admins must not contain duplicates");
+  }
+  return normalizedAdmins;
 }
 
 /**
@@ -73,10 +95,8 @@ export async function handlePoolCreated(db: Database, event: PoolCreatedEvent): 
   if (!event.token) {
     throw new Error("PoolCreated event missing required field: token");
   }
-  if (!Array.isArray(event.admins) || event.admins.length === 0) {
-    throw new Error("PoolCreated event must have at least one admin");
-  }
-  if (event.threshold < 1 || event.threshold > event.admins.length) {
+  const admins = validateAdmins(event.admins);
+  if (!Number.isInteger(event.threshold) || event.threshold < 1 || event.threshold > admins.length) {
     throw new Error("PoolCreated event threshold must be between 1 and admins.length");
   }
 
@@ -84,7 +104,7 @@ export async function handlePoolCreated(db: Database, event: PoolCreatedEvent): 
     pool_id: event.pool_id,
     token: event.token,
     balance: BigInt(0),
-    admins: event.admins,
+    admins: admins,
     threshold: event.threshold,
     created_ledger: event.ledger,
     updated_ledger: event.ledger,
@@ -112,11 +132,18 @@ export async function handlePoolDeposit(db: Database, event: PoolDepositEvent): 
  * Handle a PoolWithdraw event.
  *
  * Subtracts the withdrawn amount from the pool's running balance.
+ * Withdrawals are limited to the configured maximum and require sufficient
+ * pool balance. The database layer must atomically reject the update if the
+ * resulting balance would be negative, making insufficient funds an atomic
+ * failure.
  */
 export async function handlePoolWithdraw(db: Database, event: PoolWithdrawEvent): Promise<void> {
   validatePoolId(event.pool_id);
   if (event.amount <= BigInt(0)) {
     throw new Error("PoolWithdraw event amount must be positive");
+  }
+  if (event.amount > MAX_REWARD_AMOUNT) {
+    throw new Error("PoolWithdraw event amount exceeds maximum reward amount");
   }
 
   await db.adjustPoolBalance(event.pool_id, -event.amount, event.ledger);
@@ -126,25 +153,31 @@ export async function handlePoolWithdraw(db: Database, event: PoolWithdrawEvent)
  * Handle a PoolAdminAdded event.
  *
  * Appends a new admin address to the pool's admins list.
- * Idempotent: if the admin already exists the database layer must silently
- * skip the insertion (e.g. INSERT … ON CONFLICT DO NOTHING).
+ * Throws if the admin already exists or the address is invalid.
  */
 export async function handlePoolAdminAdded(
   db: Database,
   event: PoolAdminAddedEvent
 ): Promise<void> {
   validatePoolId(event.pool_id);
-  if (!event.new_admin) {
-    throw new Error("PoolAdminAdded event missing required field: new_admin");
+  const normalizedAdmin = validateAdminAddress(event.new_admin);
+
+  const pool = await db.getPool(event.pool_id);
+  if (!pool) {
+    throw new Error(`Pool not found: $event.pool_id`);
+  }
+  if (pool.admins.some((admin) => normalizeStellarAddress(admin) === normalizedAdmin)) {
+    throw new Error(`Admin already exists in pool ${event.pool_id}: ${event.new_admin}`);
   }
 
-  await db.addPoolAdmin(event.pool_id, event.new_admin, event.ledger);
+  await db.addPoolAdmin(event.pool_id, normalizedAdmin, event.ledger);
 }
 
 /**
  * Handle a PoolAdminRemoved event.
  *
  * Removes an admin address from the pool's admins list.
+ * Throws if removing the admin would drop the number of admins below the threshold.
  * Idempotent: if the admin does not exist the database layer must silently
  * skip the deletion.
  */
@@ -152,12 +185,22 @@ export async function handlePoolAdminRemoved(
   db: Database,
   event: PoolAdminRemovedEvent
 ): Promise<void> {
-  if (!event.pool_id) {
-    throw new Error("PoolAdminRemoved event missing required field: pool_id");
-  }
-  if (!event.removed_admin) {
-    throw new Error("PoolAdminRemoved event missing required field: removed_admin");
+  validatePoolId(event.pool_id);
+  const normalizedAdmin = validateAdminAddress(event.removed_admin);
+
+  const pool = await db.getPool(event.pool_id);
+  if (!pool) {
+    throw new Error(`Pool not found: $event.pool_id`);
   }
 
-  await db.removePoolAdmin(event.pool_id, event.removed_admin, event.ledger);
+  const remainingAdmins = pool.admins.filter(
+    (admin) => normalizeStellarAddress(admin) !== normalizedAdmin
+  );
+  if (pool.threshold > remainingAdmins.length) {
+    throw new Error(
+      `Cannot remove admin: pool threshold ${pool.threshold} exceeds remaining admin count ${remainingAdmins.length}`
+    );
+  }
+
+  await db.removePoolAdmin(event.pool_id, normalizedAdmin, event.ledger);
 }
