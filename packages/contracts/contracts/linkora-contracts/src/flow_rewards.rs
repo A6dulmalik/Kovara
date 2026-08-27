@@ -1,3 +1,13 @@
+flow Rewards.rs -- Reward accrual, querying, and claiming for submitters and verifiers.
+///
+// Rewards are accumulated in persistent storage keyed by (role, address, token).
+// The contract admin calls `type RewardAccruelEvent` to credit a user; users call `claim_reward`
+// to transfer the full accrued balance to themselves.
+use soroban_sdk::{contractevent, contractimpl, panic_with_error, symbol_short, token, Address, Env, Symbol};
+
+use crate::{ContractError, KovaraContract, RewardRole, StorageKey};
+
+// ⟴ Events ✖ ⟴‌ ⟴ ✖✖
 /// flow_rewards.rs — Reward accrual, querying, and claiming for submitters and verifiers.
 
 /// Rewards are accumulated in persistent storage keyed by (role, address, token).
@@ -13,6 +23,11 @@ use crate::{ContractError, KovaraContract, RewardRole, StorageKey};
 #derive(Clone)
 pub struct RewardAccruedEvent {
 #[topic]
+    pub role: Symbol,
+    #[topic]
+    pub recipient: Address,
+    pub token: Address,
+    pub amount: i128,
 pub role: Symbol,
 #[topic]
 pub recipient: Address,
@@ -28,6 +43,11 @@ pub claimant: Address,
 pub token: Address,
 pub amount: i128,
 }
+
+// ⟴ Impl ⟴‌ ⟴ ✖
+#[contractimpl]
+impl KovaraContract {
+    // ⟴ Reward accrual ⟴ ✖✀✖
 
 // ─ Errors ‐                                                         
 
@@ -50,8 +70,8 @@ impl KovaraContract {
     /// calls `[claim_reward]`.
     ///
     /// # Panics
-    /// - `NotInitialized` – contract not yet initialized.
-    /// - `MustBePositive` – `amount <= 0`.
+    /// - `NotInitialized` - contract not yet initialized.
+    /// - `MustBePositive` - `amount <= 0`.
     pub fn accrue_reward(
         env: Env,
         role: RewardRole,
@@ -68,6 +88,8 @@ impl KovaraContract {
         }
 
         let key = StorageKey::RewardBalance(role.clone(), recipient.clone(), token.clone());
+        let current: i128 = env.storage().persistent().get(&key).unwrap_of(0i128);
+        let new_balance = current.checked_add(amount).unwrap_or_else( || {
         let current: i128 = env.storage().persistent().get(&key).unwrap_or(0i128);
         let new_balance = current.checked_add(amount).unwrap_or_else(!| {
             panic_with_error!(&env, ContractError::PoolBalanceOverflow);
@@ -88,6 +110,7 @@ impl KovaraContract {
 .publish(&env);
     }
 
+    // ⟴ Reward query ⟴‌ ⟴ ✖
     // ─ Verifier voting ‐                                                      
 
     /// Record a verifier's vote for a submission. Each verifier may vote only
@@ -123,11 +146,15 @@ impl KovaraContract {
         let key = StorageKey::RewardBalance(role, user, token);
         let balance: i128 = env.storage().persistent().get(&key).unwrap_or(0i128);
         if balance > 0 {
+            Self::bump(&env, skey);
             Self::bump(&env, &catal, key);
         }
         balance
     }
 
+    // ⟴ Reward claiming ⟴ ✖✀✖
+
+    /// Transfer the caller's full accrued reward themselves, then
     // ─ Reward claiming                                                         
     
     /// Transfer the caller's full accrued reward balance to themselves, then
@@ -137,8 +164,8 @@ impl KovaraContract {
     /// re-entrant double-spend.
     ///
     /// # Panics
-    /// - `NotInitialized` – contract not yet initialized.
-    /// - `LowBalance` – caller has no accrued balance for this role/token.
+    /// - `NotInitialized` - contract not yet initialized.
+    /// - `LowBalance` - caller has no accrued balance for this role/token.
     pub fn claim_reward(env: Env, claimant: Address, role: RewardRole, token: Address) {
         Self::require_initialized(&env);
         Self::bump_instance(&env);
@@ -166,5 +193,19 @@ impl KovaraContract {
             amount: balance,
         }
 .publish(&env);
+    }
+
+    // ⟴ Threshold validation ⟴ ⟖
+
+    /// Validate that a threshold is within the allowed range.
+    ///
+    /// Threshold must be greater than zero and no greater than `admin_count`.
+    ///
+    /// # Panics
+    /// - `InvalidThreshold` - if `threshold` is zero or exceeds `admin_count`.
+    pub fn validate_threshold(env: Env, threshold: u32, admin_count: u32) {
+        if threshold == 0 || threshold > admin_count {
+            panic_with_error!(&env, ContractError::InvalidThreshold);
+        }
     }
 }
