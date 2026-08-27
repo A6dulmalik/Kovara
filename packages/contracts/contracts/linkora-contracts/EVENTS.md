@@ -13,6 +13,22 @@ All events follow a consistent topic structure:
 
 When a schema change is required, the version symbol will be incremented. Indexers should filter for the versions they support.
 
+## PriceSubmitted
+
+Emitted for a validated price observation. Prices are fixed-point integer amounts with scale 100 (two decimal places); clients must not submit floating-point values. A contributor may submit once per `(submitter, item, period)` and must provide at least one unit of stake plus a one-unit deposit in the submitted asset. Submissions are rate-limited to one per 1,728 ledgers per contributor.
+
+- **Topic 0**: `Kovara`
+- **Topic 1**: `price`
+- **Topic 2**: `v1`
+- **Data Payload**: `PriceSubmittedEvent`
+  - `version`: `Symbol` (`v1`)
+  - `submitter`: `Address`
+  - `item`: `String`
+  - `amount`: `i128` (positive, maximum `9_000_000_000_000_000_000`, scaled by 100)
+  - `asset`: `Address`
+  - `period`: `u64` (ledger timestamp, not in the future)
+  - `timestamp`: `u64` (submission ledger timestamp)
+
 ## Canonical Events
 
 ### ProfileSet

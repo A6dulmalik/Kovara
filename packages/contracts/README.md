@@ -83,6 +83,8 @@ All persistent application state is keyed through the `StorageKey` enum:
 | `Like(u64, Address)`    | (post_id, user)  | `bool`             | Like marker for a specific user/post pair                         |
 | `Pool(Symbol)`          | Pool ID symbol   | `Pool`             | Community pool state by pool ID                                   |
 | `Proposal(u64)`         | Proposal ID      | `Proposal`         | Pool withdrawal proposal by unique proposal ID                    |
+| `Verifier(Address)`                  | Verifier address     | `bool`    | Registered verifier marker                         |
+| `VerifierStake(Address, Address)`    | (verifier, token)    | `i128`    | Deposited stake balance by verifier and token       |
 
 ### Temporary Storage
 
@@ -251,8 +253,11 @@ Controls the peer-verification layer. Verifiers stake XLM to participate. Each s
 **Interface:**
 
 ```rust
-// Stake XLM to join the verifier pool
-fn stake(env: Env, verifier: Address, amount: i128) -> Result<(), Error>;
+// Register and deposit tokens to join the verifier pool
+fn register_verifier(env: Env, verifier: Address);
+fn deposit_stake(env: Env, verifier: Address, token: Address, amount: i128);
+fn get_verifier_stake(env: Env, verifier: Address, token: Address) -> i128;
+fn is_verifier(env: Env, verifier: Address) -> bool;
 
 // Cast a verification vote on a submission
 fn vote(
