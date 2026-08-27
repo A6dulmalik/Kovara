@@ -49,3 +49,32 @@ describe("008_tips_activity_indexes.sql (BA-019 #454)", () => {
     expect(sql).not.toMatch(/^\s*INDEX\s+\w+\s*\(/im);
   });
 });
+
+describe("009_likes_membership_indexes.sql (BA-020 #455)", () => {
+  const sql = readMigration("009_likes_membership_indexes.sql");
+
+  it("indexes likes by post_id", () => {
+    expect(sql).toMatch(/CREATE INDEX IF NOT EXISTS idx_likes_post_id\s+ON likes\s*\(\s*post_id\s*\)/i);
+  });
+
+  it("indexes likes by user_address", () => {
+    expect(sql).toMatch(/CREATE INDEX IF NOT EXISTS idx_likes_user\s+ON likes\s*\(\s*user_address\s*\)/i);
+  });
+
+  it("does not use invalid MySQL-style inline INDEX table items", () => {
+    expect(sql).not.toMatch(/^\s*INDEX\s+\w+\s*\(/im);
+  });
+
+  it("does not touch the duplicate-like protection defined in 004_tips_likes.sql", () => {
+    // This migration must only add indexes; the UNIQUE (post_id, user_address)
+    // constraint that prevents duplicate likes lives in 004_tips_likes.sql and
+    // must not be redefined or dropped here. Strip comments before asserting
+    // so mentioning "UNIQUE" in prose above doesn't trip the check.
+    const sqlWithoutComments = sql.replace(/--.*$/gm, "");
+    expect(sqlWithoutComments).not.toMatch(/UNIQUE/i);
+    expect(sqlWithoutComments).not.toMatch(/DROP\s+CONSTRAINT/i);
+
+    const originalTableMigration = readMigration("004_tips_likes.sql");
+    expect(originalTableMigration).toMatch(/UNIQUE\s*\(\s*post_id\s*,\s*user_address\s*\)/i);
+  });
+});
