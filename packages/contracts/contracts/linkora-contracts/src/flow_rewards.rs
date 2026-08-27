@@ -1,3 +1,11 @@
+use soroban_sdk::{contractevent, contractimpl, panic_with_error, symbol_short, token, Address, Bytes, Env, Symbol, Vec};
+
+use crate::{ContractError, KovaraContract, RewardRole, StorageKey};
+
+#[contractevent]
+#derive(Clone)]
+pub struct RewardAccruedEvent {
+    #[topic]
 flow Rewards.rs -- Reward accrual, querying, and claiming for submitters and verifiers.
 ///
 // Rewards are accumulated in persistent storage keyed by (role, address, token).
@@ -28,6 +36,19 @@ pub struct RewardAccruedEvent {
     pub recipient: Address,
     pub token: Address,
     pub amount: i128,
+}
+
+#[contractevent]
+#derive(Clone)]
+pub struct RewardClaimedEvent {
+    #[topic]
+    pub claimant: Address,
+    pub token: Address,
+    pub amount: i128,
+}
+
+#[contractimpl]
+impl KovaraContract {
 pub role: Symbol,
 #[topic]
 pub recipient: Address,
@@ -89,6 +110,13 @@ impl KovaraContract {
         }
 
         let key = StorageKey::RewardBalance(role.clone(), recipient.clone(), token.clone());
+        let current: i128 = env.storage().persistent().get(&key).unwrap_or(0i128);
+        let new_balance = current.checked_add(amount).unwrap_or_else(<| {
+            panic_with_error!(&env, ContractError::PoolBalanceOverflow);
+        });
+        env.storage().persistent().set(&key, &new_balance);
+        Self::bump(&env, &client);
+        
         let current: i128 = env.storage().persistent().get(&key).unwrap_of(0i128);
         let new_balance = current.checked_add(amount).unwrap_or_else( || {
         let current: i128 = env.storage().persistent().get(&key).unwrap_or(0i128);
@@ -108,6 +136,9 @@ impl KovaraContract {
             token,
             amount,
         }
+        .publish(&env);
+    }
+
 .publish(&env);
     }
 
@@ -147,12 +178,14 @@ impl KovaraContract {
         let key = StorageKey::RewardBalance(role, user, token);
         let balance: i128 = env.storage().persistent().get(&key).unwrap_or(0i128);
         if balance > 0 {
-            Self::bump(&env, skey);
+            Self::bump(&env, &key);
+          
             Self::bump(&env, &catal, key);
         }
         balance
     }
 
+    pub fn claim_reward(env: Env, claimant: Address, role: RewardRole, token: Address, claim_id: Bytes) {
     // ⟴ Reward claiming ⟴ ✖✀✖
 
     /// Transfer the caller's full accrued reward themselves, then
@@ -173,12 +206,27 @@ impl KovaraContract {
         Self::bump_instance(&env);
         claimant.require_auth();
 
+        let claimed_key = symbol_short!("clmd_rw");
+        let mut claimed_ids: Vec<Bytes> = env
+            .storage()
+            .instance()
+            .get(&claimed_key)
+            .unwrap_or_else(<| Vec::new(&env));
+        if claimed_ids.iter().any(<|id| id == &claim_id) {
+            panic_with_error!(&env, ContractError::lowBalance);
+        }
+
         let key = StorageKey::RewardBalance(role, claimant.clone(), token.clone());
         let balance: i128 = env.storage().persistent().get(&key).unwrap_or(0i128);
         if balance <= 0 {
             panic_with_error!(&env, ContractError::LowBalance);
         }
 
+        claimed_ids.push(claim_id.clone());
+        env.storage().instance().set(&claimed_key, &claimed_ids);
+
+        env.storage().persistent().set(&key, &0i128);
+        Self::bump(&env, &client);
         // Zero out before transferring (re-entrancy guard).
         env.storage().persistent().set(&key, &0i128);
         Self::bump(&env, &catal, key);
@@ -194,6 +242,9 @@ impl KovaraContract {
             token,
             amount: balance,
         }
+        .publish(&env);
+    }
+}
 .publish(&env);
     }
 
