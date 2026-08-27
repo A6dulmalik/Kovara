@@ -320,6 +320,46 @@ fn test_get_posts_by_author_after_delete() {
     assert_eq!(page.get(1).unwrap(), id3);
 }
 
+// ── Price observation tests ───────────────────────────────────────────────────
+
+#[test]
+fn test_price_is_fixed_point_and_emits_complete_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_sequence_number(2_000);
+    env.ledger().with_timestamp(10_000);
+    let contract_id = env.register(KovaraContract, ());
+    let client = KovaraContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    client.initialize(&admin, &treasury, &0);
+    let submitter = Address::generate(&env);
+    let token = setup_token(&env, &submitter);
+    let item = String::from_str(&env, "bread");
+
+    client.submit_price(&submitter, &item, &12345, &token, &9_900, &1);
+    assert_eq!(client.get_price(&submitter, &item, &9_900), Some(12345));
+    assert_eq!(client.price_scale(), 100);
+}
+
+#[test]
+#[should_panic(expected = "duplicate observation")]
+fn test_duplicate_price_observation_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_sequence_number(2_000);
+    env.ledger().with_timestamp(10_000);
+    let contract_id = env.register(KovaraContract, ());
+    let client = KovaraContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    client.initialize(&admin, &Address::generate(&env), &0);
+    let submitter = Address::generate(&env);
+    let token = setup_token(&env, &submitter);
+    let item = String::from_str(&env, "rent");
+    client.submit_price(&submitter, &item, &100, &token, &9_900, &1);
+    client.submit_price(&submitter, &item, &101, &token, &9_900, &1);
+}
+
 // ── Post tests ────────────────────────────────────────────────────────────────
 
 #[test]
