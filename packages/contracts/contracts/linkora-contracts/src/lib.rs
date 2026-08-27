@@ -80,6 +80,7 @@ pub enum ContractError {
     TreasuryCannotBeContract = 43,
     NoOpFeeUpdate = 44,
     InvalidWasmHash = 43,
+    CannotLikeOwnPost = 45,
 }
 
 // ── Instance-storage key constants (small scalars, not contracttype) ──────────
@@ -895,6 +896,11 @@ impl KovaraContract {
             .unwrap_or_else(|| {
                 panic_with_error!(&env, ContractError::PostNotFound);
             });
+
+        if post.author == user {
+            panic_with_error!(&env, ContractError::CannotLikeOwnPost);
+        }
+
         post.like_count += 1;
         env.storage().persistent().set(&post_key, &post);
         Self::bump(&env, &post_key);

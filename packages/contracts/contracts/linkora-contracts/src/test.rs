@@ -921,6 +921,19 @@ fn test_like_post() {
 }
 
 #[test]
+#[should_panic(expected = "Error(Contract, #45)")]
+fn test_like_own_post_panics() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_contract(&env);
+
+    let author = Address::generate(&env);
+    let post_id = client.create_post(&author, &String::from_str(&env, "Like test"));
+
+    client.like_post(&author, &post_id);
+}
+
+#[test]
 fn test_like_post_emits_event_on_first_like() {
     let env = Env::default();
     env.mock_all_auths();
