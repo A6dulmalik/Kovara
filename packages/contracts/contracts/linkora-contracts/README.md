@@ -88,6 +88,17 @@ Instance storage keys: `INITIALIZED`, `ADMIN`, `TREASURY`, `FEE_BPS`, `TIP_COOLD
 | `set_tip_cooldown_window(cooldown_ledgers)` | Admin-only. Set the per-tipper per-post cooldown. |
 | `get_tip_cooldown_window()` | Return the current cooldown in ledgers. |
 
+### FlowRewards
+
+| Function | Description |
+|---|---|
+| `accrue_reward(role, recipient, token, amount)` | Admin-only reward accrual. |
+| `get_reward_balance(role, user, token)` | Return an unclaimed reward balance. |
+| `claim_reward(claimant, role, token)` | Transfer the claimant's accrued reward. |
+| `fund_rewards(depositor, token, amount)` | Authenticated deposit of reward assets. |
+| `recover_rewards(recipient, token, amount)` | Admin-only recovery of unreserved assets. |
+| `get_reward_liability(token)` | Return total outstanding claims for a token. |
+
 ### Community pools
 
 | Function | Description |
@@ -140,7 +151,18 @@ Instance storage keys: `INITIALIZED`, `ADMIN`, `TREASURY`, `FEE_BPS`, `TIP_COOLD
 | 23 | `LowBalance` | pool balance is below withdrawal amount |
 | 30 | `NotInitialized` | contract not yet initialized |
 
-See `ContractError` in `lib.rs` for the full list of 44 error codes.
+See `ContractError` in `lib.rs` for the full list of error codes.
+
+### FlowRewards treasury controls
+
+`fund_rewards(depositor, token, amount)` requires the depositor's authorization,
+rejects non-token assets, and transfers assets into the contract. Every accrued
+reward increases a persistent per-token liability; every claim decreases it.
+`recover_rewards(recipient, token, amount)` is admin-only and can transfer only
+the token balance exceeding that liability. Funding and recovery emit events
+(`RewardFundsDepositedEvent` and `RewardFundsRecoveredEvent`) for auditing.
+Invalid assets, insufficient surplus, and attempts to withdraw reserved funds
+fail without changing state.
 
 ---
 

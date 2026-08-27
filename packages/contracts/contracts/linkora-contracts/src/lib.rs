@@ -31,6 +31,7 @@ pub enum StorageKey {
     PriceStake(Address), // persistent: contributor -> locked stake
     Proposal(u64),              // persistent: proposal_id -> Proposal
     RewardBalance(RewardRole, Address, Address), // persistent: (role, user, token) -> i128
+    RewardLiability(Address),     // persistent: token -> total unclaimed rewards
     Verifier(Address),          // persistent: registered verifier marker
   // persistent: (verifier, token) -> i128
     VoteRound(u64),                            // persistent: submission_id -> VoteRound
@@ -87,6 +88,9 @@ pub enum ContractError {
     TreasuryCannotBeContract = 43,
     NoOpFeeUpdate = 44,
     InvalidWasmHash = 43,
+    InvalidRewardAsset = 45,
+    RewardFundsReserved = 46,
+    RewardFundsUnavailable = 47,
     VerifierAlreadyRegistered = 45,
     VerifierNotRegistered = 46,
     StakeAmountMustBePositive = 47,
