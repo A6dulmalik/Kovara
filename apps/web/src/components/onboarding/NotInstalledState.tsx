@@ -1,12 +1,12 @@
-// State 1: Freighter not installed
+// State 1: No supported wallet provider detected
 export function NotInstalledState() {
   return (
     <div className="flex flex-col items-center text-center gap-6">
       <div className="text-5xl">🔌</div>
       <div>
-        <h2 className="text-2xl font-bold mb-2">Freighter Wallet Required</h2>
+        <h2 className="text-2xl font-bold mb-2">Wallet connection required</h2>
         <p className="text-[var(--text-muted)] max-w-xs">
-          Kovara uses Freighter to sign transactions on Stellar. Install the browser extension to
+          Install Freighter for browser-based signing or use WalletConnect with a mobile wallet to
           get started.
         </p>
       </div>

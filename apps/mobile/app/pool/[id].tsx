@@ -11,6 +11,7 @@ import { useLocalSearchParams } from "expo-router";
 import { useWallet } from "../../hooks/useWallet";
 import { usePool } from "../../hooks/usePool";
 import { PoolDepositForm } from "../../components/PoolDepositForm";
+import { ErrorState } from "../../components/states/ErrorState";
 
 type PoolParams = {
   id: string;
@@ -19,13 +20,16 @@ type PoolParams = {
 export default function PoolDetailScreen(): JSX.Element {
   const { id } = useLocalSearchParams<PoolParams>();
   const { wallet } = useWallet();
-  const { pool, loading, error, isAdmin, refresh } = usePool(id || "");
+  const { pool, loading, error, errorCode, isAdmin, refresh } = usePool(id || "");
 
   if (!id) {
     return (
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-        <Text style={styles.error}>Pool ID not found</Text>
-      </ScrollView>
+      <ErrorState
+        message="Pool ID is missing from the route."
+        statusCode={404}
+        onRetry={refresh}
+        title="Not found"
+      />
     );
   }
 
@@ -38,18 +42,14 @@ export default function PoolDetailScreen(): JSX.Element {
   }
 
   if (error || !pool) {
+    // Typed API errors (network → 503, auth → 401/403, not-found → 404)
+    // are normalized by usePool into errorCode for consistent ErrorState UI.
     return (
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-        <Text style={styles.error}>{error || "Pool not found"}</Text>
-        <TouchableOpacity
-          style={styles.retryButton}
-          onPress={refresh}
-          accessibilityRole="button"
-          accessibilityLabel="Retry loading pool"
-        >
-          <Text style={styles.retryButtonText}>Retry</Text>
-        </TouchableOpacity>
-      </ScrollView>
+      <ErrorState
+        message={error ?? "Pool not found"}
+        statusCode={errorCode ?? 404}
+        onRetry={refresh}
+      />
     );
   }
 
@@ -86,7 +86,8 @@ export default function PoolDetailScreen(): JSX.Element {
         <Text style={styles.sectionValue}>{pool.threshold}</Text>
       </View>
 
-      <PoolDepositForm poolId={pool.pool_id} token={pool.token} />
+      <PoolDepositForm poolId={pool.pool_id} token={pool.token} tokenDecimals={pool.token_decimals} />
+      <PoolDepositForm poolId={pool.pool_id} token={pool.token} onSuccess={refresh} />
 
       {isCurrentUserAdmin && (
         <View style={styles.adminSection}>
@@ -273,17 +274,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#fca5a5",
     marginBottom: 16,
-  },
-  retryButton: {
-    backgroundColor: "#6366f1",
-    borderRadius: 8,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    alignSelf: "flex-start",
-  },
-  retryButtonText: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "600",
   },
 });

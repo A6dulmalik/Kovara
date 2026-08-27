@@ -13,19 +13,11 @@ import {
 import { useRouter } from "expo-router";
 
 import { useToast } from "../../context/ToastContext";
+import { useNetwork } from "../../hooks/useNetwork";
 import { useWallet } from "../../hooks/useWallet";
+import { submitProfileTransaction } from "../../hooks/profileContract";
 
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,32}$/;
-
-async function setProfileTransaction(
-  _user: string,
-  _username: string,
-  _creatorToken: string
-): Promise<string> {
-  // Replace with SDK-backed set_profile submission once signing is wired.
-  await new Promise<void>((resolve) => setTimeout(resolve, 800));
-  return `mock_tx_${Date.now().toString(36)}`;
-}
 
 function validateUsername(value: string): string | null {
   if (!value.trim()) return "Username is required.";
@@ -38,10 +30,12 @@ function validateUsername(value: string): string | null {
 export default function EditProfileScreen() {
   const router = useRouter();
   const { address, connected } = useWallet();
+  const { rpcUrl, contractId } = useNetwork();
   const { showPending, showSuccess, showError } = useToast();
 
   const [username, setUsername] = useState("");
   const [creatorToken, setCreatorToken] = useState("");
+  const [bannerUrl, setBannerUrl] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [usernameError, setUsernameError] = useState<string | null>(null);
 
@@ -57,6 +51,7 @@ export default function EditProfileScreen() {
       showError("Connect your wallet to edit your profile.");
       return;
     }
+      // onPress={() => router.push("/connect" as Parameters<typeof router.push>[0])}
 
     const error = validateUsername(username);
     if (error) {
@@ -68,7 +63,14 @@ export default function EditProfileScreen() {
     showPending();
 
     try {
-      const txHash = await setProfileTransaction(address, username.trim(), creatorToken.trim());
+      const txHash = await submitProfileTransaction(
+        address,
+        username.trim(),
+        creatorToken.trim(),
+        bannerUrl.trim(),
+        rpcUrl,
+        contractId
+      );
       showSuccess(txHash);
       router.back();
     } catch (err) {
@@ -84,11 +86,10 @@ export default function EditProfileScreen() {
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-      >
-        <Text style={styles.heading}>Edit Profile</Text>
+      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+        <Text style={styles.heading} accessibilityRole="header" accessibilityLabel="Edit profile">
+          Edit Profile
+        </Text>
 
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Username</Text>
@@ -102,9 +103,37 @@ export default function EditProfileScreen() {
             autoCorrect={false}
             editable={!submitting}
             accessibilityLabel="Username"
+            accessibilityHint="Choose a username with 3 to 32 letters, numbers, or underscores"
+            accessibilityState={{ disabled: submitting }}
           />
-          {usernameError ? <Text style={styles.errorText}>{usernameError}</Text> : null}
+          {usernameError ? (
+            <Text
+              style={styles.errorText}
+              accessibilityRole="alert"
+              accessibilityLiveRegion="assertive"
+            >
+              {usernameError}
+            </Text>
+          ) : null}
           <Text style={styles.hint}>3–32 characters: letters, numbers, or underscores.</Text>
+        </View>
+
+        <View style={styles.fieldGroup}>
+          <Text style={styles.label}>Banner URL</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="https://example.com/banner.jpg"
+            placeholderTextColor="#64748b"
+            value={bannerUrl}
+            onChangeText={setBannerUrl}
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={!submitting}
+            accessibilityLabel="Profile banner URL"
+            accessibilityHint="Enter a URL for your profile cover image"
+            accessibilityState={{ disabled: submitting }}
+          />
+          <Text style={styles.hint}>Optional cover image URL shown at the top of your profile.</Text>
         </View>
 
         <View style={styles.fieldGroup}>
@@ -119,6 +148,8 @@ export default function EditProfileScreen() {
             autoCorrect={false}
             editable={!submitting}
             accessibilityLabel="Creator token address"
+            accessibilityHint="Paste the Stellar contract address of your creator token"
+            accessibilityState={{ disabled: submitting }}
           />
           <Text style={styles.hint}>Stellar contract address for your creator token.</Text>
         </View>
@@ -127,7 +158,10 @@ export default function EditProfileScreen() {
           style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
           onPress={handleSubmit}
           disabled={submitting}
+          accessibilityRole="button"
           accessibilityLabel="Save profile"
+          accessibilityHint="Submits your profile changes to the network"
+          accessibilityState={{ disabled: submitting, busy: submitting }}
         >
           {submitting ? (
             <ActivityIndicator color="#ffffff" />
@@ -140,6 +174,10 @@ export default function EditProfileScreen() {
           style={styles.cancelButton}
           onPress={() => router.back()}
           disabled={submitting}
+          accessibilityRole="button"
+          accessibilityLabel="Cancel"
+          accessibilityHint="Returns to the previous screen without saving"
+          accessibilityState={{ disabled: submitting }}
         >
           <Text style={styles.cancelText}>Cancel</Text>
         </TouchableOpacity>

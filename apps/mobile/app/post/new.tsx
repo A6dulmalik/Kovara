@@ -16,25 +16,11 @@ import { useRouter } from "expo-router";
 import { useWallet } from "../../hooks/useWallet";
 import { useTheme } from "../../theme/useTheme";
 import { useToast } from "../../context/ToastContext";
+import { useCreatePost } from "../../hooks/useCreatePost";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const MAX_CHARS = 280;
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-/**
- * Stub for the real contract call.
- * Replace with `KovaraClient.createPost(author, content)` once the SDK is wired.
- */
-async function submitCreatePost(_author: string, _content: string): Promise<string> {
-  // TODO: replace with real SDK call, e.g.:
-  // const client = new KovaraClient({ contractId: CONTRACT_ID, rpcUrl: RPC_URL });
-  // const postId = await client.createPost(author, content);
-  // return String(postId);
-  await new Promise((r) => setTimeout(r, 1200)); // simulate network
-  return String(Math.floor(Math.random() * 10_000) + 1);
-}
 
 // ── Screen ───────────────────────────────────────────────────────────────────
 
@@ -43,9 +29,9 @@ export default function CreatePostScreen() {
   const { theme } = useTheme();
   const { address, connected } = useWallet();
   const { showPending, showSuccess, showError, dismissToast } = useToast();
+  const { submitting, submit } = useCreatePost();
 
   const [content, setContent] = useState("");
-  const [submitting, setSubmitting] = useState(false);
 
   const remaining = MAX_CHARS - content.length;
   const overLimit = remaining < 0;
@@ -61,34 +47,62 @@ export default function CreatePostScreen() {
   const handleSubmit = useCallback(async () => {
     if (submitDisabled || !address) return;
 
-    setSubmitting(true);
     showPending();
 
-    try {
-      const postId = await submitCreatePost(address, content.trim());
-      dismissToast();
-      showSuccess(postId);
-      // Navigate to the new post detail screen
-      router.replace(`/post/${postId}` as Parameters<typeof router.replace>[0]);
-    } catch (err) {
-      dismissToast();
-      showError(err instanceof Error ? err.message : "Failed to publish post.");
-      setSubmitting(false);
+    const result = await submit({ content });
+
+    // The pending toast must be dismissed in every flow: success, error, or
+    // already shown validation message.
+    dismissToast();
+      // onPress={() => router.push("/connect" as Parameters<typeof router.push>[0])}
+
+    if (result.ok) {
+      showSuccess(result.txHash || result.postId);
+      router.replace(`/post/${result.postId}` as Parameters<typeof router.replace>[0]);
+      setContent("");
+    } else {
+      // Different failure categories get a slightly different title so the
+      // user has a hint about whether retrying will help.
+      const title =
+        result.code === "USER_REJECTED"
+          ? "Transaction canceled"
+          : result.code === "WALLET_DISCONNECTED"
+            ? "Wallet not connected"
+            : result.code === "NETWORK"
+              ? "Network error"
+              : "Failed to publish post";
+      showError(result.message, title);
     }
-  }, [submitDisabled, address, content, router, showPending, showSuccess, showError, dismissToast]);
+  }, [
+    submitDisabled,
+    address,
+    content,
+    router,
+    showPending,
+    showSuccess,
+    showError,
+    dismissToast,
+    submit,
+  ]);
 
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   // ── Not connected guard ───────────────────────────────────────────────────
   if (!connected) {
     return (
-      <View style={styles.guard}>
+      <View
+        style={styles.guard}
+        accessibilityRole="summary"
+        accessibilityLabel="Wallet not connected. Connect your wallet to create a post."
+      >
         <Text style={styles.guardText}>Connect your wallet to create a post.</Text>
         <TouchableOpacity
           style={styles.connectBtn}
           onPress={() => router.push("/connect" as Parameters<typeof router.push>[0])}
           accessibilityRole="button"
           accessibilityLabel="Connect wallet"
+          accessibilityHint="Opens the wallet connection screen"
+          accessibilityState={{ disabled: false }}
         >
           <Text style={styles.connectBtnText}>Connect Wallet</Text>
         </TouchableOpacity>
@@ -107,9 +121,18 @@ export default function CreatePostScreen() {
         keyboardShouldPersistTaps="handled"
       >
         {/* Composer */}
-        <View style={styles.composerCard}>
+        <View
+          style={styles.composerCard}
+          accessibilityRole="summary"
+          accessibilityLabel="Compose a new post"
+        >
           {/* Author hint */}
-          <Text style={styles.authorHint} numberOfLines={1} accessibilityLabel="Your address">
+          <Text
+            style={styles.authorHint}
+            numberOfLines={1}
+            accessibilityRole="text"
+            accessibilityLabel={`Posting as ${address!.slice(0, 8)} through ${address!.slice(-6)}`}
+          >
             {`${address!.slice(0, 8)}…${address!.slice(-6)}`}
           </Text>
 
@@ -125,7 +148,8 @@ export default function CreatePostScreen() {
             editable={!submitting}
             autoFocus
             accessibilityLabel="Post content"
-            accessibilityHint={`Maximum ${MAX_CHARS} characters`}
+            accessibilityHint={`Compose the body of your post. Maximum ${MAX_CHARS} characters.`}
+            accessibilityState={{ disabled: submitting }}
           />
 
           {/* Footer: counter + submit */}
@@ -133,7 +157,7 @@ export default function CreatePostScreen() {
             {/* Character counter */}
             <Text
               style={[styles.counter, { color: counterColor }]}
-              accessibilityLabel={`${remaining} characters remaining`}
+              accessibilityLabel={`${remaining} characters remaining of ${MAX_CHARS}`}
               accessibilityLiveRegion="polite"
             >
               {remaining}
@@ -146,6 +170,7 @@ export default function CreatePostScreen() {
               disabled={submitDisabled}
               accessibilityRole="button"
               accessibilityLabel="Publish post"
+              accessibilityHint="Publishes your post to the network"
               accessibilityState={{ disabled: submitDisabled, busy: submitting }}
             >
               {submitting ? (
@@ -156,9 +181,18 @@ export default function CreatePostScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Over-limit error */}
-          {overLimit && (
+          {/* Validation errors */}
+          {isEmpty && (
             <Text style={styles.errorMsg} accessibilityRole="alert">
+              Post content cannot be empty.
+            </Text>
+          )}
+          {overLimit && (
+            <Text
+              style={styles.errorMsg}
+              accessibilityRole="alert"
+              accessibilityLiveRegion="assertive"
+            >
               {`Post is ${Math.abs(remaining)} character${Math.abs(remaining) === 1 ? "" : "s"} over the limit.`}
             </Text>
           )}

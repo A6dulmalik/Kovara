@@ -11,11 +11,11 @@
 [![Monorepo: pnpm](https://img.shields.io/badge/Monorepo-pnpm%20workspaces-blue)](https://pnpm.io)
 [![Build: Turborepo](https://img.shields.io/badge/Build-Turborepo-black)](https://turbo.build)
 
----
+---,
 
 ## What is Kōvara?
-
-*Kōvara* (कोवर) — a compound drawn from Sanskrit *kova* (price/value) and the Stellar concept of an open, borderless horizon.
+<!-- 
+*Kōvara* (कोवर) — a compound drawn from Sanskrit *kova* (price/value) and the Stellar concept of an open, borderless horizon. -->
 
 Official cost-of-living indices are published annually, built on opaque methodology, and controlled by institutions. Crowd-sourced alternatives like Numbeo offer no submission incentives and no verifiability. Kōvara replaces both with a fully open, on-chain alternative:
 
@@ -226,6 +226,36 @@ Reward pools are funded through a community treasury, replenished by B2B data li
 - Rust stable + `soroban-cli`
 - A funded Stellar Testnet account — get one via [Stellar Laboratory](https://laboratory.stellar.org/#account-creator)
 
+### Quickstart
+
+From the repository root, the fastest way to bring up the workspace is:
+
+```bash
+git clone https://github.com/kovara-protocol/kovara.git
+cd kovara
+pnpm install
+pnpm dev
+```
+
+That installs all workspace dependencies and starts the monorepo development tasks through Turborepo.
+
+For Rust contract testing, run:
+
+```bash
+cd packages/contracts
+cargo test
+```
+
+To target a single workspace package, scope pnpm commands with `--filter`:
+
+```bash
+pnpm --filter @kovara/atlas dev
+pnpm --filter @kovara/api build
+pnpm --filter @kovara/contracts test
+```
+
+Package scoping uses the workspace definitions in `pnpm-workspace.yaml` and the package names declared in each package's `package.json`.
+
 ### Install
 
 ```bash
@@ -324,3 +354,12 @@ MIT © 2025 Kōvara Contributors
 <p align="center">
   Built on <strong>Stellar</strong> · Powered by <strong>Soroban</strong> · Open data for the world 🌍
 </p>
+
+## Frontend Routes Index
+| Route | Component / View | Description |
+| :--- | :--- | :--- |
+| `/country` | CountryIndexView | Regional and country-specific configurations |
+| `/history` | HistoryIndexView | Historical user activity and transaction logs |
+| `/basket` | BasketIndexView | Active items and checkout basket management |
+| `/methodology` | MethodologyIndexView | Documentation and formula explanations |
+| `/rewards` | RewardsIndexView | User rewards, staking, and bonus tracking |

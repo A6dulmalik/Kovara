@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { useTheme } from "../theme/useTheme";
 
@@ -7,6 +7,7 @@ export interface ProfileData {
   address: string;
   username?: string | null;
   bio?: string | null;
+  bannerUrl?: string | null;
 }
 
 interface Props {
@@ -39,6 +40,11 @@ export default function ProfileHeader({
 
   return (
     <View style={styles.container}>
+      {profile.bannerUrl ? (
+        <View style={styles.bannerWrap}>
+          <Image testID="profile-banner-image" source={{ uri: profile.bannerUrl }} style={styles.bannerImage} />
+        </View>
+      ) : null}
       <View style={styles.row}>
         <View style={styles.avatar}>
           <Text style={styles.avatarText}>{(profile.username ?? "").charAt(0).toUpperCase() || "?"}</Text>
@@ -89,6 +95,17 @@ function createStyles(theme: ReturnType<typeof useTheme>["theme"]) {
       borderBottomWidth: 1,
       borderBottomColor: theme.colors.surface.border,
       backgroundColor: theme.colors.surface.background,
+    },
+    bannerWrap: {
+      marginBottom: 12,
+      borderRadius: 16,
+      overflow: "hidden",
+      height: 120,
+      backgroundColor: theme.colors.surface.elevated,
+    },
+    bannerImage: {
+      width: "100%",
+      height: "100%",
     },
     row: {
       flexDirection: "row",

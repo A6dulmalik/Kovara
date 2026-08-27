@@ -2,6 +2,9 @@ default: build
 
 all: test
 
+deploy-verify:
+	./scripts/deploy-verify-testnet.sh
+
 test: build
 	cargo test
 

@@ -13,6 +13,7 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 
 import { resolvePendingRequest } from "../../mini-apps/bridge";
+import { submitCreatePost } from "./submitCreatePost";
 
 export default function CreatePostScreen() {
   const { requestId } = useLocalSearchParams<{ requestId: string }>();
@@ -29,16 +30,22 @@ export default function CreatePostScreen() {
 
     setSubmitting(true);
 
-    const postId = `post_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    try {
+      const postId = await submitCreatePost(trimmed);
 
-    // Simulate brief network delay
-    await new Promise((r) => setTimeout(r, 300));
+      if (requestId) {
+        resolvePendingRequest(requestId, { postId, content: trimmed });
+      }
 
-    if (requestId) {
-      resolvePendingRequest(requestId, { postId, content: trimmed });
+      router.back();
+    } catch {
+      // Stay on the compose screen with the draft intact. Navigating away or
+      // clearing the field would discard what the user wrote because of a
+      // failure that had nothing to do with them.
+      Alert.alert("Post failed", "Something went wrong. Your draft has been kept.");
+    } finally {
+      setSubmitting(false);
     }
-
-    router.back();
   };
 
   return (

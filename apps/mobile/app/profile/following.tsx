@@ -10,6 +10,7 @@ import type { FollowUser } from "../../hooks/useFollowers";
 type FollowingParams = {
   address: string;
 };
+      // onPress={() => router.push("/connect" as Parameters<typeof router.push>[0])}
 
 export default function FollowingScreen() {
   const router = useRouter();

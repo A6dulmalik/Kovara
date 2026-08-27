@@ -6,21 +6,27 @@ import {
   ScrollView,
   ActivityIndicator,
   TouchableOpacity,
+  RefreshControl,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { PoolCard } from "../../components/PoolCard";
 import { usePools } from "../../hooks/usePools";
 import { EmptyState } from "../../components/states/EmptyState";
+import { ErrorState } from "../../components/states/ErrorState";
+import { useTheme } from "../../theme/useTheme";
 
 export default function PoolsScreen() {
   const router = useRouter();
-  const { pools, loading, error, refresh } = usePools();
+  const { theme } = useTheme();
+  const { pools, loading, error, errorCode, hasMore, loadMore, refresh } = usePools();
 
   const handlePoolPress = (poolId: string) => {
     router.push(`/pool/${poolId}`);
   };
 
-  if (loading) {
+  const isInitialLoad = loading && pools.length === 0;
+
+  if (isInitialLoad) {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
@@ -28,30 +34,20 @@ export default function PoolsScreen() {
           <Text style={styles.subtitle}>Community funding pools</Text>
         </View>
         <View style={styles.loaderContainer}>
-          <ActivityIndicator size="large" color="#6366f1" />
+          <ActivityIndicator size="large" color={theme.colors.brand.primary} />
         </View>
       </View>
     );
   }
 
-  if (error) {
+  if (error && pools.length === 0) {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
           <Text style={styles.title}>Pools</Text>
           <Text style={styles.subtitle}>Community funding pools</Text>
         </View>
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity
-            style={styles.retryButton}
-            onPress={refresh}
-            accessibilityRole="button"
-            accessibilityLabel="Retry loading pools"
-          >
-            <Text style={styles.retryButtonText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
+        <ErrorState message={error} statusCode={errorCode} onRetry={refresh} />
       </View>
     );
   }
@@ -73,7 +69,27 @@ export default function PoolsScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.contentContainer}
+      refreshControl={
+        <RefreshControl
+          refreshing={loading && pools.length > 0}
+          onRefresh={refresh}
+          tintColor={theme.colors.brand.primary}
+          colors={[theme.colors.brand.primary]}
+        />
+      }
+      onScroll={({ nativeEvent }) => {
+        const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+        const nearBottom =
+          layoutMeasurement.height + contentOffset.y >= contentSize.height - 120;
+        if (nearBottom && hasMore && !loading) {
+          loadMore();
+        }
+      }}
+      scrollEventThrottle={200}
+    >
       <View style={styles.header}>
         <Text style={styles.title}>Pools</Text>
         <Text style={styles.subtitle}>Community funding pools</Text>
@@ -90,7 +106,7 @@ export default function PoolsScreen() {
           >
             <PoolCard
               id={pool.pool_id}
-              name={pool.token}
+              name={pool.token_symbol ?? pool.token}
               description={`${pool.admins.length} admin${pool.admins.length === 1 ? "" : "s"}`}
               totalValue={`${pool.balance.toString()}`}
               participants={pool.admins.length}
@@ -99,6 +115,29 @@ export default function PoolsScreen() {
           </TouchableOpacity>
         ))}
       </View>
+
+      {loading && pools.length > 0 ? (
+        <ActivityIndicator
+          style={styles.footer}
+          color={theme.colors.brand.primary}
+          size="small"
+        />
+      ) : null}
+
+      {!hasMore && pools.length > 0 ? (
+        <Text style={styles.endOfList}>You've reached the end</Text>
+      ) : null}
+
+      {hasMore && !loading ? (
+        <TouchableOpacity
+          style={styles.loadMoreButton}
+          onPress={loadMore}
+          accessibilityRole="button"
+          accessibilityLabel="Load more pools"
+        >
+          <Text style={styles.loadMoreText}>Load more</Text>
+        </TouchableOpacity>
+      ) : null}
     </ScrollView>
   );
 }
@@ -109,7 +148,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#0f172a",
   },
   contentContainer: {
-    paddingBottom: 24,
+    paddingBottom: 32,
   },
   header: {
     paddingHorizontal: 24,
@@ -135,26 +174,26 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  errorContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 24,
+  footer: {
+    paddingVertical: 16,
   },
-  errorText: {
-    color: "#fca5a5",
-    fontSize: 14,
-    marginBottom: 16,
+  endOfList: {
     textAlign: "center",
+    color: "#64748b",
+    fontSize: 13,
+    paddingVertical: 16,
   },
-  retryButton: {
-    backgroundColor: "#6366f1",
-    borderRadius: 8,
-    paddingHorizontal: 24,
+  loadMoreButton: {
+    marginHorizontal: 16,
+    marginTop: 8,
     paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#334155",
+    alignItems: "center",
   },
-  retryButtonText: {
-    color: "#fff",
+  loadMoreText: {
+    color: "#cbd5e1",
     fontSize: 14,
     fontWeight: "600",
   },
