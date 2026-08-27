@@ -14,6 +14,10 @@
 
 import { Database } from "../db";
 
+// CT-026: hard cap for a single reward withdrawal. Prevents draining the
+// treasury through an unbounded reward payout.
+const MAX_REWARD_AMOUNT: bigint = BigInt(1_000_000);
+
 export interface PoolCreatedEvent {
   pool_id: string;
   token: string;
@@ -65,7 +69,7 @@ function validatePoolId(poolId: string): void {
  * Handle a PoolCreated event.
  *
  * Inserts the pool row with an initial balance of 0.  Safe to replay:
- * insertPool must be implemented as an INSERT … ON CONFLICT DO NOTHING
+ * insertPool must be implemented as an INSERT '… ON CONFLICT DO NOTHING
  * (or equivalent) so duplicate events are silently ignored.
  */
 export async function handlePoolCreated(db: Database, event: PoolCreatedEvent): Promise<void> {
@@ -112,11 +116,18 @@ export async function handlePoolDeposit(db: Database, event: PoolDepositEvent): 
  * Handle a PoolWithdraw event.
  *
  * Subtracts the withdrawn amount from the pool's running balance.
+ * Withdrawals are limited to the configured maximum and require sufficient
+ * pool balance. The database layer must atomically reject the update if the
+ * resulting balance would be negative, making insufficient funds an atomic
+ * failure.
  */
 export async function handlePoolWithdraw(db: Database, event: PoolWithdrawEvent): Promise<void> {
   validatePoolId(event.pool_id);
   if (event.amount <= BigInt(0)) {
     throw new Error("PoolWithdraw event amount must be positive");
+  }
+  if (event.amount > MAX_REWARD_AMOUNT) {
+    throw new Error("PoolWithdraw event amount exceeds maximum reward amount");
   }
 
   await db.adjustPoolBalance(event.pool_id, -event.amount, event.ledger);
