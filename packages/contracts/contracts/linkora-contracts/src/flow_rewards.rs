@@ -29,6 +29,26 @@ pub struct RewardClaimedEvent {
     pub amount: i128,
 }
 
+#[contractevent]
+#[derive(Clone)]
+pub struct RewardFundsDepositedEvent {
+    #[topic]
+    pub depositor: Address,
+    #[topic]
+    pub token: Address,
+    pub amount: i128,
+}
+
+#[contractevent]
+#[derive(Clone)]
+pub struct RewardFundsRecoveredEvent {
+    #[topic]
+    pub recipient: Address,
+    #[topic]
+    pub token: Address,
+    pub amount: i128,
+}
+
 // ── impl ──────────────────────────────────────────────────────────────────────
 
 #[contractimpl]
@@ -64,6 +84,7 @@ impl KovaraContract {
         let new_balance = current.checked_add(amount).unwrap_or_else(|| {
             panic_with_error!(&env, ContractError::PoolBalanceOverflow);
         });
+        Self::increase_liability(&env, &token, amount);
         env.storage().persistent().set(&key, &new_balance);
         Self::bump(&env, &key);
 
@@ -78,6 +99,64 @@ impl KovaraContract {
             amount,
         }
         .publish(&env);
+    }
+
+    /// Deposit reward assets into the contract. The depositor must authorize
+    /// the transfer; deposits are never credited to a claimant directly.
+    pub fn fund_rewards(env: Env, depositor: Address, token: Address, amount: i128) {
+        Self::require_initialized(&env);
+        Self::bump_instance(&env);
+        depositor.require_auth();
+        Self::validate_reward_asset(&env, &token);
+        if amount <= 0 {
+            panic_with_error!(&env, ContractError::MustBePositive);
+        }
+
+        token::Client::new(&env, &token).transfer(
+            &depositor,
+            &env.current_contract_address(),
+            &amount,
+        );
+        RewardFundsDepositedEvent {
+            depositor,
+            token,
+            amount,
+        }
+        .publish(&env);
+    }
+
+    /// Recover only surplus reward assets. The admin cannot withdraw assets
+    /// reserved by outstanding reward liabilities.
+    pub fn recover_rewards(env: Env, recipient: Address, token: Address, amount: i128) {
+        Self::require_initialized(&env);
+        Self::bump_instance(&env);
+        Self::require_admin(&env);
+        Self::validate_reward_asset(&env, &token);
+        if amount <= 0 {
+            panic_with_error!(&env, ContractError::MustBePositive);
+        }
+
+        let token_client = token::Client::new(&env, &token);
+        let balance = token_client.balance(&env.current_contract_address());
+        let liability = Self::get_reward_liability_internal(&env, &token);
+        let available = balance.checked_sub(liability).unwrap_or_else(|| {
+            panic_with_error!(&env, ContractError::RewardFundsUnavailable);
+        });
+        if amount > available {
+            panic_with_error!(&env, ContractError::RewardFundsReserved);
+        }
+        token_client.transfer(&env.current_contract_address(), &recipient, &amount);
+        RewardFundsRecoveredEvent {
+            recipient,
+            token,
+            amount,
+        }
+        .publish(&env);
+    }
+
+    pub fn get_reward_liability(env: Env, token: Address) -> i128 {
+        Self::require_initialized(&env);
+        Self::get_reward_liability_internal(&env, &token)
     }
 
     // ── Reward query ──────────────────────────────────────────────────────────
@@ -109,18 +188,24 @@ impl KovaraContract {
         Self::require_initialized(&env);
         Self::bump_instance(&env);
         claimant.require_auth();
+        Self::validate_reward_asset(&env, &token);
 
         let key = StorageKey::RewardBalance(role, claimant.clone(), token.clone());
         let balance: i128 = env.storage().persistent().get(&key).unwrap_or(0i128);
         if balance <= 0 {
             panic_with_error!(&env, ContractError::LowBalance);
         }
+        let token_client = token::Client::new(&env, &token);
+        if token_client.balance(&env.current_contract_address()) < balance {
+            panic_with_error!(&env, ContractError::RewardFundsUnavailable);
+        }
 
         // Zero out before transferring (re-entrancy guard).
         env.storage().persistent().set(&key, &0i128);
         Self::bump(&env, &key);
+        Self::decrease_liability(&env, &token, balance);
 
-        token::Client::new(&env, &token).transfer(
+        token_client.transfer(
             &env.current_contract_address(),
             &claimant,
             &balance,
@@ -132,5 +217,41 @@ impl KovaraContract {
             amount: balance,
         }
         .publish(&env);
+    }
+
+    fn validate_reward_asset(env: &Env, token: &Address) {
+        if *token == env.current_contract_address() {
+            panic_with_error!(env, ContractError::InvalidRewardAsset);
+        }
+        token::Client::new(env, token).balance(&env.current_contract_address());
+    }
+
+    fn get_reward_liability_internal(env: &Env, token: &Address) -> i128 {
+        let key = StorageKey::RewardLiability(token.clone());
+        let value: i128 = env.storage().persistent().get(&key).unwrap_or(0);
+        if value > 0 {
+            Self::bump(env, &key);
+        }
+        value
+    }
+
+    fn increase_liability(env: &Env, token: &Address, amount: i128) {
+        let key = StorageKey::RewardLiability(token.clone());
+        let current = Self::get_reward_liability_internal(env, token);
+        let value = current.checked_add(amount).unwrap_or_else(|| {
+            panic_with_error!(env, ContractError::PoolBalanceOverflow);
+        });
+        env.storage().persistent().set(&key, &value);
+        Self::bump(env, &key);
+    }
+
+    fn decrease_liability(env: &Env, token: &Address, amount: i128) {
+        let key = StorageKey::RewardLiability(token.clone());
+        let current = Self::get_reward_liability_internal(env, token);
+        let value = current.checked_sub(amount).unwrap_or_else(|| {
+            panic_with_error!(env, ContractError::PoolBalanceUnderflow);
+        });
+        env.storage().persistent().set(&key, &value);
+        Self::bump(env, &key);
     }
 }

@@ -28,6 +28,7 @@ pub enum StorageKey {
     TipCooldown(u64, Address), // temporary: (post_id, tipper) -> last-tip ledger sequence number
     Proposal(u64),              // persistent: proposal_id -> Proposal
     RewardBalance(RewardRole, Address, Address), // persistent: (role, user, token) -> i128
+    RewardLiability(Address),     // persistent: token -> total unclaimed rewards
 }
 
 // ── Error Codes ────────────────────────────────────────────────────────────────
@@ -80,6 +81,9 @@ pub enum ContractError {
     TreasuryCannotBeContract = 43,
     NoOpFeeUpdate = 44,
     InvalidWasmHash = 43,
+    InvalidRewardAsset = 45,
+    RewardFundsReserved = 46,
+    RewardFundsUnavailable = 47,
 }
 
 // ── Instance-storage key constants (small scalars, not contracttype) ──────────

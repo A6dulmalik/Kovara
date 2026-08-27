@@ -175,6 +175,26 @@ Emitted when tokens are deposited into a community pool.
   - `pool_id`: `Symbol`
   - `amount`: `i128`
 
+### RewardFundsDeposited
+
+Emitted when reward assets are funded.
+
+- **Topic 0**: `FlowRewards`
+- **Topic 1**: `depositor`
+- **Topic 2**: `token`
+- **Data Payload**: `RewardFundsDepositedEvent`
+  - `amount`: `i128`
+
+### RewardFundsRecovered
+
+Emitted when the admin recovers unreserved reward assets.
+
+- **Topic 0**: `FlowRewards`
+- **Topic 1**: `recipient`
+- **Topic 2**: `token`
+- **Data Payload**: `RewardFundsRecoveredEvent`
+  - `amount`: `i128`
+
 ### PoolWithdraw
 
 Emitted when tokens are withdrawn from a community pool.
