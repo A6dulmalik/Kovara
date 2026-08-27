@@ -29,6 +29,51 @@ fn setup_contract(env: &Env) -> (KovaraContractClient<'_>, Address, Address) {
 }
 
 #[test]
+fn test_verifier_registration_and_stake_balance() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_contract(&env);
+    let verifier = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token = token_id.address();
+    StellarAssetClient::new(&env, &token).mint(&verifier, &1_000);
+
+    assert!(!client.is_verifier(&verifier));
+    assert_eq!(client.get_verifier_stake(&verifier, &token), 0);
+
+    client.register_verifier(&verifier);
+    client.deposit_stake(&verifier, &token, &250);
+    client.deposit_stake(&verifier, &token, &100);
+
+    assert!(client.is_verifier(&verifier));
+    assert_eq!(client.get_verifier_stake(&verifier, &token), 350);
+    assert_eq!(TokenClient::new(&env, &token).balance(&verifier), 650);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #46)")]
+fn test_unregistered_verifier_cannot_deposit_stake() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_contract(&env);
+    let verifier = Address::generate(&env);
+    let token = make_token(&env);
+    client.deposit_stake(&verifier, &token, &100);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #45)")]
+fn test_verifier_cannot_register_twice() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_contract(&env);
+    let verifier = Address::generate(&env);
+    client.register_verifier(&verifier);
+    client.register_verifier(&verifier);
+}
+
+#[test]
 fn test_set_and_get_profile() {
     let env = Env::default();
     env.mock_all_auths();

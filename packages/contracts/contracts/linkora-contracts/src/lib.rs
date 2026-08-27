@@ -28,6 +28,8 @@ pub enum StorageKey {
     TipCooldown(u64, Address), // temporary: (post_id, tipper) -> last-tip ledger sequence number
     Proposal(u64),              // persistent: proposal_id -> Proposal
     RewardBalance(RewardRole, Address, Address), // persistent: (role, user, token) -> i128
+    Verifier(Address),          // persistent: registered verifier marker
+    VerifierStake(Address, Address), // persistent: (verifier, token) -> i128
 }
 
 // ── Error Codes ────────────────────────────────────────────────────────────────
@@ -80,6 +82,10 @@ pub enum ContractError {
     TreasuryCannotBeContract = 43,
     NoOpFeeUpdate = 44,
     InvalidWasmHash = 43,
+    VerifierAlreadyRegistered = 45,
+    VerifierNotRegistered = 46,
+    StakeAmountMustBePositive = 47,
+    StakeBalanceOverflow = 48,
 }
 
 // ── Instance-storage key constants (small scalars, not contracttype) ──────────
@@ -1687,3 +1693,4 @@ impl KovaraContract {
 
 mod test;
 pub mod flow_rewards;
+pub mod sentinel_pool;
