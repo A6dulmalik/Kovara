@@ -26,6 +26,9 @@ pub enum StorageKey {
     Blocks(Address),           // persistent: blocker -> Map<Address, ()>
     UsernameIndex(String), // persistent: username -> owner Address (reverse index for uniqueness)
     TipCooldown(u64, Address), // temporary: (post_id, tipper) -> last-tip ledger sequence number
+    PriceObservation(Address, String, u64), // persistent: contributor/item/period -> observation
+    PriceRate(Address), // persistent: contributor -> last submission ledger
+    PriceStake(Address), // persistent: contributor -> locked stake
     Proposal(u64),              // persistent: proposal_id -> Proposal
     RewardBalance(RewardRole, Address, Address), // persistent: (role, user, token) -> i128
     VoteRound(u64),                            // persistent: submission_id -> VoteRound
@@ -101,6 +104,12 @@ const TREASURY: Symbol = symbol_short!("TREASURY");
 const FEE_BPS: Symbol = symbol_short!("FEE_BPS");
 const INITIALIZED: Symbol = symbol_short!("INIT");
 const TIP_COOLDOWN_WINDOW: Symbol = symbol_short!("TIP_CD_W");
+const PRICE_SCALE: i128 = 100;
+const PRICE_MAX: i128 = 9_000_000_000_000_000_000;
+const PRICE_SUBMISSION_GAP: u32 = 1_728;
+const PRICE_MIN_STAKE: i128 = 1;
+const PRICE_DEPOSIT: i128 = 1;
+const PRICE_EVENT_VERSION: Symbol = symbol_short!("v1");
 const PROPOSAL_CT: Symbol = symbol_short!("PROP_CT");
 const PAUSED: Symbol = symbol_short!("PAUSED");
 
@@ -233,6 +242,21 @@ pub struct PostCreatedEvent {
     pub id: u64,
     #[topic]
     pub author: Address,
+}
+
+#[contractevent]
+#[derive(Clone)]
+pub struct PriceSubmittedEvent {
+    #[topic]
+    pub version: Symbol,
+    #[topic]
+    pub submitter: Address,
+    #[topic]
+    pub item: String,
+    pub amount: i128,
+    pub asset: Address,
+    pub period: u64,
+    pub timestamp: u64,
 }
 
 #[contractevent]
@@ -1049,6 +1073,55 @@ impl KovaraContract {
         }
         .publish(&env);
     }
+
+    // ── Price observations ─────────────────────────────────────────────────────
+
+    /// Submit a price as integer minor units scaled by 100 (two decimal places).
+    /// Each contributor may submit one observation per item and period.
+    pub fn submit_price(
+        env: Env,
+        submitter: Address,
+        item: String,
+        amount: i128,
+        asset: Address,
+        period: u64,
+        stake: i128,
+    ) {
+        Self::bump_instance(&env);
+        submitter.require_auth();
+        assert!(!item.is_empty(), "item is required");
+        assert!(amount > 0 && amount <= PRICE_MAX, "price out of range");
+        assert!(stake >= PRICE_MIN_STAKE, "insufficient stake");
+        assert!(period <= env.ledger().timestamp(), "period is in the future");
+
+        let observation_key = StorageKey::PriceObservation(submitter.clone(), item.clone(), period);
+        assert!(!env.storage().persistent().has(&observation_key), "duplicate observation");
+        if let Some(last) = env.storage().persistent().get::<_, u32>(&StorageKey::PriceRate(submitter.clone())) {
+            assert!(env.ledger().sequence().saturating_sub(last) >= PRICE_SUBMISSION_GAP, "submission rate limited");
+        }
+
+        let stake_key = StorageKey::PriceStake(submitter.clone());
+        let current_stake: i128 = env.storage().persistent().get(&stake_key).unwrap_or(0);
+        let token_client = token::Client::new(&env, &asset);
+        token_client.transfer(&submitter, &env.current_contract_address(), &stake);
+        token_client.transfer(&submitter, &env.current_contract_address(), &PRICE_DEPOSIT);
+        env.storage().persistent().set(&stake_key, &(current_stake + stake));
+        env.storage().persistent().set(&observation_key, &amount);
+        env.storage().persistent().set(&StorageKey::PriceRate(submitter.clone()), &env.ledger().sequence());
+        Self::bump(&env, &stake_key);
+        Self::bump(&env, &observation_key);
+        Self::bump(&env, &StorageKey::PriceRate(submitter.clone()));
+        PriceSubmittedEvent { version: PRICE_EVENT_VERSION, submitter, item, amount, asset, period, timestamp: env.ledger().timestamp() }.publish(&env);
+    }
+
+    pub fn get_price(env: Env, submitter: Address, item: String, period: u64) -> Option<i128> {
+        let key = StorageKey::PriceObservation(submitter, item, period);
+        let result = env.storage().persistent().get(&key);
+        if result.is_some() { Self::bump(&env, &key); }
+        result
+    }
+
+    pub fn price_scale(_env: Env) -> i128 { PRICE_SCALE }
 
     // ── Community Pool ────────────────────────────────────────────────────────
 

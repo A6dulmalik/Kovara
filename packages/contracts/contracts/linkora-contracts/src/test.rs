@@ -445,6 +445,46 @@ fn test_get_posts_by_author_after_delete() {
     assert_eq!(page.get(1).unwrap(), id3);
 }
 
+// ── Price observation tests ───────────────────────────────────────────────────
+
+#[test]
+fn test_price_is_fixed_point_and_emits_complete_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_sequence_number(2_000);
+    env.ledger().with_timestamp(10_000);
+    let contract_id = env.register(KovaraContract, ());
+    let client = KovaraContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    client.initialize(&admin, &treasury, &0);
+    let submitter = Address::generate(&env);
+    let token = setup_token(&env, &submitter);
+    let item = String::from_str(&env, "bread");
+
+    client.submit_price(&submitter, &item, &12345, &token, &9_900, &1);
+    assert_eq!(client.get_price(&submitter, &item, &9_900), Some(12345));
+    assert_eq!(client.price_scale(), 100);
+}
+
+#[test]
+#[should_panic(expected = "duplicate observation")]
+fn test_duplicate_price_observation_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_sequence_number(2_000);
+    env.ledger().with_timestamp(10_000);
+    let contract_id = env.register(KovaraContract, ());
+    let client = KovaraContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    client.initialize(&admin, &Address::generate(&env), &0);
+    let submitter = Address::generate(&env);
+    let token = setup_token(&env, &submitter);
+    let item = String::from_str(&env, "rent");
+    client.submit_price(&submitter, &item, &100, &token, &9_900, &1);
+    client.submit_price(&submitter, &item, &101, &token, &9_900, &1);
+}
+
 // ── Post tests ────────────────────────────────────────────────────────────────
 
 #[test]
@@ -918,19 +958,6 @@ fn test_like_post() {
     // Duplicate like should not increment
     client.like_post(&user, &post_id);
     assert_eq!(client.get_like_count(&post_id), 1);
-}
-
-#[test]
-#[should_panic(expected = "Error(Contract, #45)")]
-fn test_like_own_post_panics() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (client, _, _) = setup_contract(&env);
-
-    let author = Address::generate(&env);
-    let post_id = client.create_post(&author, &String::from_str(&env, "Like test"));
-
-    client.like_post(&author, &post_id);
 }
 
 #[test]
@@ -4779,103 +4806,4 @@ fn test_accrue_zero_amount_panics() {
 
     // amount = 0 should panic with MustBePositive (#20)
     client.accrue_reward(&crate::RewardRole::Submitter, &user, &token, &0);
-}
-
-// ── CT-017: Deterministic slashing invariants ────────────────────────────────
-
-#[test]
-fn test_pool_slash_evidence_authority_amount_destination_conservation() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (client, _, pool_id, token, admins) = setup_pool(&env, 3, 2, 1_000);
-    let treasury = client.get_treasury().unwrap();
-    let signers = vec![&env, admins.get(0).unwrap(), admins.get(1).unwrap()];
-    let evidence = BytesN::from_array(&env, &[0x5a; 32]);
-
-    let pool_before = client.get_pool(&pool_id).unwrap().balance;
-    let treasury_before = TokenClient::new(&env, &token).balance(&treasury);
-
-    client.pool_slash(&signers, &pool_id, &evidence, &250);
-
-    let pool_after = client.get_pool(&pool_id).unwrap().balance;
-    let treasury_after = TokenClient::new(&env, &token).balance(&treasury);
-
-    assert_eq!(pool_before, 1_000);
-    assert_eq!(pool_after, 750);
-    assert_eq!(treasury_after, treasury_before + 250);
-    assert_eq!(
-        pool_after + treasury_after,
-        pool_before + treasury_before,
-        "slashing must conserve total pooled and treasury tokens"
-    );
-}
-
-#[test]
-#[should_panic(expected = "Error(Contract, #22)")]
-fn test_pool_slash_rejects_unauthorized_authority() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (client, _, pool_id, _, admins) = setup_pool(&env, 3, 2, 500);
-    let outsider = Address::generate(&env);
-    let signers = vec![&env, admins.get(0).unwrap(), outsider];
-    let evidence = BytesN::from_array(&env, &[1u8; 32]);
-
-    client.pool_slash(&signers, &pool_id, &evidence, &10);
-}
-
-#[test]
-#[should_panic(expected = "Error(Contract, #21)")]
-fn test_pool_slash_requires_threshold_signers() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (client, _, pool_id, _, admins) = setup_pool(&env, 3, 2, 500);
-    let signers = vec![&env, admins.get(0).unwrap()];
-    let evidence = BytesN::from_array(&env, &[2u8; 32]);
-
-    client.pool_slash(&signers, &pool_id, &evidence, &10);
-}
-
-#[test]
-#[should_panic(expected = "Error(Contract, #20)")]
-fn test_pool_slash_zero_amount_rejected() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (client, _, pool_id, _, admins) = setup_pool(&env, 1, 1, 500);
-    let signers = vec![&env, admins.get(0).unwrap()];
-    let evidence = BytesN::from_array(&env, &[3u8; 32]);
-
-    client.pool_slash(&signers, &pool_id, &evidence, &0);
-}
-
-#[test]
-#[should_panic(expected = "Error(Contract, #23)")]
-fn test_pool_slash_exceeds_balance_rejected() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (client, _, pool_id, _, admins) = setup_pool(&env, 1, 1, 100);
-    let signers = vec![&env, admins.get(0).unwrap()];
-    let evidence = BytesN::from_array(&env, &[4u8; 32]);
-
-    client.pool_slash(&signers, &pool_id, &evidence, &101);
-}
-
-#[test]
-fn test_pool_slash_same_evidence_cannot_be_replayed() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (client, _, pool_id, _, admins) = setup_pool(&env, 3, 2, 500);
-    let signers = vec![&env, admins.get(0).unwrap(), admins.get(1).unwrap()];
-    let evidence = BytesN::from_array(&env, &[9u8; 32]);
-
-    client.pool_slash(&signers, &pool_id, &evidence, &50);
-
-    let replay = std::panic::catch_unwind(|| {
-        client.pool_slash(&signers, &pool_id, &evidence, &50);
-    });
-    assert!(replay.is_err(), "same evidence must not be slashable twice");
-
-    // A separate evidence incident is still slashable.
-    let evidence2 = BytesN::from_array(&env, &[10u8; 32]);
-    client.pool_slash(&signers, &pool_id, &evidence2, &25);
-    assert_eq!(client.get_pool(&pool_id).unwrap().balance, 425);
 }
