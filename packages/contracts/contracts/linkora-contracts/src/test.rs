@@ -921,6 +921,19 @@ fn test_like_post() {
 }
 
 #[test]
+#[should_panic(expected = "Error(Contract, #45)")]
+fn test_like_own_post_panics() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _) = setup_contract(&env);
+
+    let author = Address::generate(&env);
+    let post_id = client.create_post(&author, &String::from_str(&env, "Like test"));
+
+    client.like_post(&author, &post_id);
+}
+
+#[test]
 fn test_like_post_emits_event_on_first_like() {
     let env = Env::default();
     env.mock_all_auths();
@@ -4766,4 +4779,103 @@ fn test_accrue_zero_amount_panics() {
 
     // amount = 0 should panic with MustBePositive (#20)
     client.accrue_reward(&crate::RewardRole::Submitter, &user, &token, &0);
+}
+
+// ── CT-017: Deterministic slashing invariants ────────────────────────────────
+
+#[test]
+fn test_pool_slash_evidence_authority_amount_destination_conservation() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, pool_id, token, admins) = setup_pool(&env, 3, 2, 1_000);
+    let treasury = client.get_treasury().unwrap();
+    let signers = vec![&env, admins.get(0).unwrap(), admins.get(1).unwrap()];
+    let evidence = BytesN::from_array(&env, &[0x5a; 32]);
+
+    let pool_before = client.get_pool(&pool_id).unwrap().balance;
+    let treasury_before = TokenClient::new(&env, &token).balance(&treasury);
+
+    client.pool_slash(&signers, &pool_id, &evidence, &250);
+
+    let pool_after = client.get_pool(&pool_id).unwrap().balance;
+    let treasury_after = TokenClient::new(&env, &token).balance(&treasury);
+
+    assert_eq!(pool_before, 1_000);
+    assert_eq!(pool_after, 750);
+    assert_eq!(treasury_after, treasury_before + 250);
+    assert_eq!(
+        pool_after + treasury_after,
+        pool_before + treasury_before,
+        "slashing must conserve total pooled and treasury tokens"
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #22)")]
+fn test_pool_slash_rejects_unauthorized_authority() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, pool_id, _, admins) = setup_pool(&env, 3, 2, 500);
+    let outsider = Address::generate(&env);
+    let signers = vec![&env, admins.get(0).unwrap(), outsider];
+    let evidence = BytesN::from_array(&env, &[1u8; 32]);
+
+    client.pool_slash(&signers, &pool_id, &evidence, &10);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #21)")]
+fn test_pool_slash_requires_threshold_signers() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, pool_id, _, admins) = setup_pool(&env, 3, 2, 500);
+    let signers = vec![&env, admins.get(0).unwrap()];
+    let evidence = BytesN::from_array(&env, &[2u8; 32]);
+
+    client.pool_slash(&signers, &pool_id, &evidence, &10);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #20)")]
+fn test_pool_slash_zero_amount_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, pool_id, _, admins) = setup_pool(&env, 1, 1, 500);
+    let signers = vec![&env, admins.get(0).unwrap()];
+    let evidence = BytesN::from_array(&env, &[3u8; 32]);
+
+    client.pool_slash(&signers, &pool_id, &evidence, &0);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #23)")]
+fn test_pool_slash_exceeds_balance_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, pool_id, _, admins) = setup_pool(&env, 1, 1, 100);
+    let signers = vec![&env, admins.get(0).unwrap()];
+    let evidence = BytesN::from_array(&env, &[4u8; 32]);
+
+    client.pool_slash(&signers, &pool_id, &evidence, &101);
+}
+
+#[test]
+fn test_pool_slash_same_evidence_cannot_be_replayed() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, pool_id, _, admins) = setup_pool(&env, 3, 2, 500);
+    let signers = vec![&env, admins.get(0).unwrap(), admins.get(1).unwrap()];
+    let evidence = BytesN::from_array(&env, &[9u8; 32]);
+
+    client.pool_slash(&signers, &pool_id, &evidence, &50);
+
+    let replay = std::panic::catch_unwind(|| {
+        client.pool_slash(&signers, &pool_id, &evidence, &50);
+    });
+    assert!(replay.is_err(), "same evidence must not be slashable twice");
+
+    // A separate evidence incident is still slashable.
+    let evidence2 = BytesN::from_array(&env, &[10u8; 32]);
+    client.pool_slash(&signers, &pool_id, &evidence2, &25);
+    assert_eq!(client.get_pool(&pool_id).unwrap().balance, 425);
 }

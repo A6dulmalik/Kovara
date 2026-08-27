@@ -7,6 +7,10 @@ const MAX_LIMIT = 100;
 const DEFAULT_LIMIT = 20;
 const DEFAULT_OFFSET = 0;
 
+function isThresholdValid(pool: PoolRecord): boolean {
+  return pool.threshold > 0 && pool.threshold <= pool.admins.length;
+}
+
 function serializePool(
   pool: PoolRecord,
   meta?: { token_name?: string; token_symbol?: string; token_decimals?: number }
@@ -49,9 +53,7 @@ export function createPoolsRouter(db: Database): Router {
         return;
       }
       if (!Number.isInteger(rawOffset) || rawOffset < 0) {
-        res
-          .status(400)
-          .json({ error: "offset must be a non-negative integer", code: "INVALID_QUERY" });
+        res.status(400).json({ error: "offset must be a non-negative integer", code: "INVALID_QUERY" });
         return;
       }
 
@@ -105,6 +107,11 @@ export function createPoolsRouter(db: Database): Router {
       const pool = await db.getPool(id);
       if (!pool) {
         res.status(404).json({ error: "Pool not found", code: "NOT_FOUND" });
+        return;
+      }
+
+      if (!isThresholdValid(pool)) {
+        res.status(422).json({ error: "Pool threshold is invalid", code: "INVALID_THRESHOLD" });
         return;
       }
 

@@ -28,6 +28,8 @@ pub enum StorageKey {
     TipCooldown(u64, Address), // temporary: (post_id, tipper) -> last-tip ledger sequence number
     Proposal(u64),              // persistent: proposal_id -> Proposal
     RewardBalance(RewardRole, Address, Address), // persistent: (role, user, token) -> i128
+    VoteRound(u64),                            // persistent: submission_id -> VoteRound
+    HasVoted(u64, Address),                    // persistent: (submission_id, verifier) -> bool
 }
 
 // ── Error Codes ────────────────────────────────────────────────────────────────
@@ -81,6 +83,13 @@ pub enum ContractError {
     NoOpFeeUpdate = 44,
     InvalidWasmHash = 43,
     Paused = 45,
+    InvalidWasmHash = 45,
+    RoundAlreadyExists = 46,
+    RoundNotFound = 47,
+    RoundClosed = 48,
+    RoundAlreadyFinalized = 49,
+    AlreadyVoted = 50,
+    RoundStillOpen = 51,
 }
 
 // ── Instance-storage key constants (small scalars, not contracttype) ──────────
@@ -540,7 +549,7 @@ impl KovaraContract {
             &Profile {
                 address: user.clone(),
                 username: username.clone(),
-                creator_token,
+                creator_token: creator_token.clone(),
             },
         );
         env.storage().persistent().set(&username_index_key, &user);
@@ -909,6 +918,11 @@ impl KovaraContract {
             .unwrap_or_else(|| {
                 panic_with_error!(&env, ContractError::PostNotFound);
             });
+
+        if post.author == user {
+            panic_with_error!(&env, ContractError::CannotLikeOwnPost);
+        }
+
         post.like_count += 1;
         env.storage().persistent().set(&post_key, &post);
         Self::bump(&env, &post_key);
@@ -1734,3 +1748,7 @@ impl KovaraContract {
 
 mod test;
 pub mod flow_rewards;
+pub mod sentinel_pool;
+
+#[cfg(test)]
+mod sentinel_pool_test;
