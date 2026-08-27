@@ -18,6 +18,7 @@ pub enum StorageKey {
     Blocks(Address),           // persistent: blocker -> Map<Address, ()>
     UsernameIndex(String), // persistent: username -> owner Address (reverse index for uniqueness)
     TipCooldown(u64, Address), // temporary: (post_id, tipper) -> last-tip ledger sequence number
+    SlashEvidence(BytesN<32>), // persistent: evidence hash -> already processed (replay protection)
 }
 
 // ── Error Codes ────────────────────────────────────────────────────────────────
@@ -67,6 +68,11 @@ pub enum ContractError {
     CreatorTokenCannotBeContract = 40,
     ContentTooShort = 41,
     ContentTooLong = 42,
+    SlashEvidenceRequired = 43,
+    SlashEvidenceAlreadyUsed = 44,
+    SlashAmountMustBePositive = 45,
+    SlashAmountExceedsBalance = 46,
+    InvalidSlashDestination = 47,
 }
 
 // ── Instance-storage key constants (small scalars, not contracttype) ──────────
@@ -238,6 +244,17 @@ pub struct PoolWithdrawEvent {
     #[topic]
     pub pool_id: Symbol,
     pub amount: i128,
+}
+
+#[contractevent]
+#[derive(Clone)]
+pub struct PoolSlashedEvent {
+    #[topic]
+    pub pool_id: Symbol,
+    #[topic]
+    pub destination: Address,
+    pub amount: i128,
+    pub evidence: BytesN<32>,
 }
 
 #[contractevent]
@@ -1060,6 +1077,90 @@ impl KovaraContract {
             recipient,
             pool_id,
             amount,
+        }
+        .publish(&env);
+    }
+
+    /// Execute a deterministic slashing rule for a pool.
+    ///
+    /// Slashed funds are sent to the configured treasury. The evidence hash
+    /// prevents the same slashing decision from being applied twice.
+    pub fn pool_slash(
+        env: Env,
+        signers: Vec<Address>,
+        pool_id: Symbol,
+        amount: i128,
+        evidence: BytesN<32>,
+        destination: Address,
+    ) {
+        Self::bump_instance(&env);
+
+        if amount <= 0 {
+            panic_with_error!(&env, ContractError::SlashAmountMustBePositive);
+        }
+        if evidence.to_array() == [0u8; 32] {
+            panic_with_error!(&env, ContractError::SlashEvidenceRequired);
+        }
+
+        let evidence_key = StorageKey::SlashEvidence(evidence.clone());
+        if env.storage().persistent().has(&evidence_key) {
+            panic_with_error!(&env, ContractError::SlashEvidenceAlreadyUsed);
+        }
+
+        let key = StorageKey::Pool(pool_id.clone());
+        let mut pool: Pool = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| {
+                panic_with_error!(&env, ContractError::PoolNotFound);
+            });
+
+        if signers.len() < pool.threshold {
+            panic_with_error!(&env, ContractError::InsufficientSigners);
+        }
+        for signer in signers.iter() {
+            if !pool.admins.iter().any(|x| x == signer) {
+                panic_with_error!(&env, ContractError::UnauthorizedSigner);
+            }
+            signer.require_auth();
+        }
+
+        if pool.balance < amount {
+            panic_with_error!(&env, ContractError::SlashAmountExceedsBalance);
+        }
+
+        let treasury: Address = env
+            .storage()
+            .instance()
+            .get(&TREASURY)
+            .unwrap_or_else(|| {
+                panic_with_error!(&env, ContractError::TreasuryNotSet);
+            });
+        if destination != treasury || destination == env.current_contract_address() {
+            panic_with_error!(&env, ContractError::InvalidSlashDestination);
+        }
+
+        pool.balance = pool.balance.checked_sub(amount).unwrap_or_else(|| {
+            panic_with_error!(&env, ContractError::PoolBalanceUnderflow);
+        });
+        env.storage().persistent().set(&key, &pool);
+        Self::bump(&env, &key);
+
+        token::Client::new(&env, &pool.token).transfer(
+            &env.current_contract_address(),
+            &destination,
+            &amount,
+        );
+
+        env.storage().persistent().set(&evidence_key, &true);
+        Self::bump(&env, &evidence_key);
+
+        PoolSlashedEvent {
+            pool_id,
+            destination,
+            amount,
+            evidence,
         }
         .publish(&env);
     }
